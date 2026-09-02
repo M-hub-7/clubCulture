@@ -1,0 +1,251 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+   
+}
+
+
+// ─── UTILISATEURS ────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  nom             String?
+  passwordHash    String?
+  emailVerifie    Boolean   @default(false)
+  stripeAccountId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  roles         UserRole[]
+  evenements    Evenement[]
+  commandes     Commande[]
+  beneficiaires Beneficiaire[]
+  scans         Scan[]
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  role      Role
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+}
+
+// ─── NEXTAUTH ────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── EVENEMENTS ──────────────────────────────────────────────
+
+model Evenement {
+  id          String          @id @default(cuid())
+  titre       String
+  description String
+  visuel      String?
+  lieu        String
+  ville       String
+  adresse     String?
+  dateDebut   DateTime
+  dateFin     DateTime
+  styles      String[]
+  statut      StatutEvenement @default(BROUILLON)
+  promoteurId String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  promoteur     User              @relation(fields: [promoteurId], references: [id])
+  categories    CategorieBillet[]
+  commandes     Commande[]
+  beneficiaires Beneficiaire[]
+}
+
+model CategorieBillet {
+  id          String   @id @default(cuid())
+  libelle     String
+  prix        Int
+  quantite    Int
+  vendu       Int      @default(0)
+  ouverture   DateTime
+  fermeture   DateTime
+  evenementId String
+
+  evenement Evenement @relation(fields: [evenementId], references: [id], onDelete: Cascade)
+  billets   Billet[]
+}
+
+// ─── BILLETTERIE ─────────────────────────────────────────────
+
+model Commande {
+  id              String         @id @default(cuid())
+  acheteurId      String
+  evenementId     String
+  montantTotal    Int
+  fraisService    Int
+  statut          StatutCommande @default(EN_ATTENTE)
+  stripePaymentId String?
+  createdAt       DateTime       @default(now())
+
+  acheteur  User      @relation(fields: [acheteurId], references: [id])
+  evenement Evenement @relation(fields: [evenementId], references: [id])
+  billets   Billet[]
+}
+
+model Billet {
+  id          String       @id @default(cuid())
+  commandeId  String
+  categorieId String
+  nomPorteur  String
+  token       String       @unique
+  statut      StatutBillet @default(VALIDE)
+  numero      Int
+  createdAt   DateTime     @default(now())
+
+  commande  Commande        @relation(fields: [commandeId], references: [id])
+  categorie CategorieBillet @relation(fields: [categorieId], references: [id])
+  scans     Scan[]
+}
+
+model Scan {
+  id        String       @id @default(cuid())
+  billetId  String
+  agentId   String
+  resultat  ResultatScan
+  horsLigne Boolean      @default(false)
+  createdAt DateTime     @default(now())
+
+  billet Billet @relation(fields: [billetId], references: [id])
+  agent  User   @relation(fields: [agentId], references: [id])
+}
+
+// ─── REPARTITION ─────────────────────────────────────────────
+
+model Beneficiaire {
+  id          String             @id @default(cuid())
+  evenementId String
+  userId      String
+  role        String
+  typePart    TypePart
+  valeur      Int
+  statut      StatutBeneficiaire @default(EN_ATTENTE)
+
+  evenement  Evenement   @relation(fields: [evenementId], references: [id])
+  user       User        @relation(fields: [userId], references: [id])
+  versements Versement[]
+}
+
+model Versement {
+  id               String          @id @default(cuid())
+  beneficiaireId   String
+  montant          Int
+  statut           StatutVersement @default(EN_ATTENTE)
+  stripeTransferId String?
+  createdAt        DateTime        @default(now())
+
+  beneficiaire Beneficiaire @relation(fields: [beneficiaireId], references: [id])
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────
+
+enum Role {
+  ACHETEUR
+  PROMOTEUR
+  AGENT
+  PRESTATAIRE
+  ADMIN
+}
+
+enum StatutEvenement {
+  BROUILLON
+  EN_MODERATION
+  PUBLIE
+  ANNULE
+  TERMINE
+}
+
+enum StatutCommande {
+  EN_ATTENTE
+  PAYEE
+  REMBOURSEE
+  ECHOUEE
+}
+
+enum StatutBillet {
+  VALIDE
+  UTILISE
+  ANNULE
+  REMBOURSE
+}
+
+enum ResultatScan {
+  VALIDE
+  DEJA_UTILISE
+  INVALIDE
+  REMBOURSE
+  MAUVAIS_EVENEMENT
+}
+
+enum TypePart {
+  FIXE
+  POURCENTAGE
+}
+
+enum StatutBeneficiaire {
+  EN_ATTENTE
+  VERIFIE
+  PAYE
+}
+
+enum StatutVersement {
+  EN_ATTENTE
+  EFFECTUE
+  ECHOUE
+}
