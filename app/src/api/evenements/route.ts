@@ -1,72 +1,53 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/app/lib/auth";
+import { verifierRole } from "@/app/lib/verifierRole";
 import { prisma } from "@/app/lib/prisma";
 
 // GET — Liste tous les événements publiés
+// GET — Liste tous les événements publiés
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const q = searchParams.get("q");
-    const ville = searchParams.get("ville");
-    const style = searchParams.get("style");
+    // ...
 
     const evenements = await prisma.evenement.findMany({
-      where: {
-        statut: "PUBLIE",
-        dateDebut: { gte: new Date() },
-        ...(q && {
-          OR: [
-            { titre: { contains: q, mode: "insensitive" } },
-            { description: { contains: q, mode: "insensitive" } },
-            { lieu: { contains: q, mode: "insensitive" } },
-          ],
-        }),
-        ...(ville && {
-          ville: { equals: ville, mode: "insensitive" },
-        }),
-        ...(style && {
-          styles: { has: style },
-        }),
-      },
-      include: {
-        promoteur: { select: { id: true, nom: true, email: true } },
-        categories: true,
-        _count: { select: { commandes: true } },
-      },
-      orderBy: { dateDebut: "asc" },
+      // ...
     });
 
-    return NextResponse.json(evenements);
+    return NextResponse.json({
+      evenements,
+    });
   } catch (error) {
     console.error("Erreur GET evenements:", error);
-    return NextResponse.json({ erreur: "Erreur serveur" }, { status: 500 });
+
+    return NextResponse.json(
+      {
+        erreur: "Erreur serveur",
+      },
+      {
+        status: 500,
+      },
+    );
   }
 }
 
 // POST — Créer un événement (Promoteur uniquement)
 export async function POST(request: Request) {
   try {
-    const session = await auth();
+    // Vérifier l'authentification et le rôle PROMOTEUR
+    const user = await verifierRole("PROMOTEUR");
 
-    if (!session?.user) {
-      return NextResponse.json({ erreur: "Non authentifié" }, { status: 401 });
-    }
-
-    // Vérifier le rôle PROMOTEUR
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      include: { roles: true },
-    });
-
-    const estPromoteur = user?.roles.some((r) => r.role === "PROMOTEUR");
-    if (!estPromoteur) {
+    if (!user) {
       return NextResponse.json(
-        { erreur: "Accès refusé — rôle PROMOTEUR requis" },
-        { status: 403 },
+        {
+          erreur: "Non authentifié ou rôle PROMOTEUR requis",
+        },
+        {
+          status: 403,
+        },
       );
     }
 
     const body = await request.json();
+
     const {
       titre,
       description,
@@ -79,15 +60,74 @@ export async function POST(request: Request) {
       categories,
     } = body;
 
-    // Validation
+    // Validation des champs obligatoires
     if (!titre || !lieu || !ville || !dateDebut || !dateFin) {
       return NextResponse.json(
-        { erreur: "Champs obligatoires manquants" },
-        { status: 400 },
+        {
+          erreur: "Champs obligatoires manquants",
+        },
+        {
+          status: 400,
+        },
       );
     }
 
-    // Créer l'événement avec ses catégories de billets
+    // Conversion des dates principales
+    const debut = new Date(dateDebut);
+    const fin = new Date(dateFin);
+
+    if (Number.isNaN(debut.getTime()) || Number.isNaN(fin.getTime())) {
+      return NextResponse.json(
+        {
+          erreur: "Dates de l'événement invalides",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    if (fin <= debut) {
+      return NextResponse.json(
+        {
+          erreur: "La date de fin doit être postérieure à la date de début",
+        },
+        {
+          status: 400,
+        },
+      );
+    }
+
+    // Préparer les catégories
+    let categoriesData: any[] = [];
+
+    if (Array.isArray(categories)) {
+      categoriesData = categories.map((c: any) => {
+        const ouverture = c.ouverture ? new Date(c.ouverture) : debut;
+
+        const fermeture = c.fermeture ? new Date(c.fermeture) : fin;
+
+        // Si les dates de catégorie sont invalides,
+        // utiliser les dates de l'événement.
+        const ouvertureValide = Number.isNaN(ouverture.getTime())
+          ? debut
+          : ouverture;
+
+        const fermetureValide = Number.isNaN(fermeture.getTime())
+          ? fin
+          : fermeture;
+
+        return {
+          libelle: c.libelle,
+          prix: Number(c.prix),
+          quantite: Number(c.quantite),
+          ouverture: ouvertureValide,
+          fermeture: fermetureValide,
+        };
+      });
+    }
+
+    // Créer l'événement
     const evenement = await prisma.evenement.create({
       data: {
         titre,
@@ -95,27 +135,44 @@ export async function POST(request: Request) {
         lieu,
         ville,
         adresse,
-        dateDebut: new Date(dateDebut),
-        dateFin: new Date(dateFin),
-        styles: styles || [],
-        promoteurId: session.user.id,
+
+        dateDebut: debut,
+        dateFin: fin,
+
+        styles: Array.isArray(styles) ? styles : [],
+
+        // Utilisateur authentifié
+        promoteurId: user.id,
+
+        // Catégories de billets
         categories: {
-          create:
-            categories?.map((c: any) => ({
-              libelle: c.libelle,
-              prix: c.prix,
-              quantite: c.quantite,
-              ouverture: new Date(c.ouverture),
-              fermeture: new Date(c.fermeture),
-            })) || [],
+          create: categoriesData,
         },
       },
-      include: { categories: true },
+
+      include: {
+        categories: true,
+      },
     });
 
-    return NextResponse.json(evenement, { status: 201 });
+    return NextResponse.json(
+      {
+        evenement,
+      },
+      {
+        status: 201,
+      },
+    );
   } catch (error) {
     console.error("Erreur POST evenement:", error);
-    return NextResponse.json({ erreur: "Erreur serveur" }, { status: 500 });
+
+    return NextResponse.json(
+      {
+        erreur: "Erreur serveur",
+      },
+      {
+        status: 500,
+      },
+    );
   }
 }

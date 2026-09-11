@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
-import { prisma } from "@/lib/prisma";
-import { genererTokenBillet } from "@/lib/qrcode";
+import { stripe } from "@/app/lib/stripe";
+import { prisma } from "@/app/lib/prisma";
+import { genererTokenBillet } from "@/app/lib/qrcode";
 
 export async function POST(request: Request) {
   const body = await request.text();
@@ -87,6 +87,4 @@ export async function POST(request: Request) {
 }
 
 // Important — désactiver le body parser de Next.js pour Stripe
-export const config = {
-  api: { bodyParser: false },
-};
+export const dynamic = "force-dynamic";

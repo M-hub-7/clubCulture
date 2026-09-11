@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { verifierTokenBillet } from "@/lib/qrcode";
+import { auth } from "@/app/lib/auth";
+import { prisma } from "@/app/lib/prisma";
+import { verifierTokenBillet } from "@/app/lib/qrcode";
 
 export async function POST(request: Request) {
   try {

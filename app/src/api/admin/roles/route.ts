@@ -23,7 +23,7 @@ async function verifierAdmin() {
 // POST — Ajouter un rôle
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = await verifierAdmin();
@@ -33,7 +33,7 @@ export async function POST(
         { status: 403 },
       );
     }
-
+    const { id } = await params;
     const { role } = await request.json();
 
     if (!TOUS_LES_ROLES.includes(role)) {
@@ -46,7 +46,7 @@ export async function POST(
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { roles: true },
     });
 
@@ -65,11 +65,11 @@ export async function POST(
     }
 
     await prisma.userRole.create({
-      data: { userId: params.id, role },
+      data: { userId: id, role },
     });
 
     const userMisAJour = await prisma.user.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { roles: true },
     });
 
@@ -89,7 +89,7 @@ export async function POST(
 // DELETE — Retirer un rôle
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const session = await verifierAdmin();
@@ -99,11 +99,12 @@ export async function DELETE(
         { status: 403 },
       );
     }
+    const { id } = await params;
 
     const { role } = await request.json();
 
     const user = await prisma.user.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { roles: true },
     });
 
@@ -122,11 +123,11 @@ export async function DELETE(
     }
 
     await prisma.userRole.deleteMany({
-      where: { userId: params.id, role },
+      where: { userId: id, role },
     });
 
     const userMisAJour = await prisma.user.findUnique({
-      where: { id: params.id },
+      where: { id: id },
       include: { roles: true },
     });
 

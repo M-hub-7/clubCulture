@@ -6,8 +6,16 @@ export async function POST(request: Request) {
   try {
     // Vérifier la clé secrète admin
     const adminSecret = request.headers.get("x-admin-secret");
-    console.log("ADMIN_SECRET configuré :", !!process.env.ADMIN_SECRET);
-    console.log("Header reçu :", !!adminSecret);
+    const expectedSecret = process.env.ADMIN_SECRET;
+
+    console.log("========== ADMIN DEBUG ==========");
+    console.log("Header reçu :", JSON.stringify(adminSecret));
+    console.log("ADMIN_SECRET :", JSON.stringify(expectedSecret));
+    console.log("Longueur header :", adminSecret?.length);
+    console.log("Longueur ADMIN_SECRET :", expectedSecret?.length);
+    console.log("Correspondance :", adminSecret === expectedSecret);
+    console.log("=================================");
+
     if (adminSecret !== process.env.ADMIN_SECRET) {
       return NextResponse.json(
         { erreur: "Clé secrète invalide" },
