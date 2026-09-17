@@ -524,237 +524,348 @@ describe("4. Création et gestion des événements", () => {
 // // BLOC 5 — PAIEMENT
 // // ─────────────────────────────────────────────────────────────
 
-// describe("5. Paiement", () => {
-//   it("5.1 un non-authentifié ne peut pas initier un paiement", async () => {
-//     const { status } = await api("POST", "/src/api/paiement/creer", {
-//       categorieId: ctx.categorieId,
-//       quantite: 2,
-//       nomPorteur: "Jean Acheteur",
-//     });
+describe("5. Paiement", () => {
+  it("5.1 un non-authentifié ne peut pas initier un paiement", async () => {
+    const { status } = await api("POST", "/src/api/paiement/creer", {
+      categorieId: ctx.categorieId,
+      quantite: 2,
+      nomPorteur: "Jean Acheteur",
+    });
 
-//     expect(status).toBe(401);
-//   });
+    expect(status).toBe(401);
+  });
 
-//   it("5.2 retourne 404 si catégorie inexistante", async () => {
-//     const { status, data } = await api(
-//       "POST",
-//       "/src/api/paiement/creer",
-//       {
-//         categorieId: "cat_inexistant",
-//         quantite: 1,
-//         nomPorteur: "Jean Acheteur",
-//       },
-//       ctx.acheteurToken,
-//     );
+  it("5.2 retourne 404 si catégorie inexistante", async () => {
+    const { status, data } = await api(
+      "POST",
+      "/src/api/paiement/creer",
+      {
+        categorieId: "cat_inexistant",
+        quantite: 1,
+        nomPorteur: "Jean Acheteur",
+      },
+      ctx.acheteurToken,
+    );
 
-//     expect(status).toBe(404);
-//     expect(data.erreur).toContain("introuvable");
-//   });
+    expect(status).toBe(404);
+    expect(data.erreur).toContain("introuvable");
+  });
 
-//   it("5.3 retourne 400 si plus assez de places", async () => {
-//     const { status, data } = await api(
-//       "POST",
-//       "/src/api/paiement/creer",
-//       {
-//         categorieId: ctx.categorieId,
-//         quantite: 999,
-//         nomPorteur: "Jean Acheteur",
-//       },
-//       ctx.acheteurToken,
-//     );
+  it("5.3 retourne 400 si plus assez de places", async () => {
+    const { status, data } = await api(
+      "POST",
+      "/src/api/paiement/creer",
+      {
+        categorieId: ctx.categorieId,
+        quantite: 999,
+        nomPorteur: "Jean Acheteur",
+      },
+      ctx.acheteurToken,
+    );
 
-//     expect(status).toBe(400);
-//     expect(data.erreur).toContain("places");
-//   });
+    expect(status).toBe(400);
+    expect(data.erreur).toContain("places");
+  });
 
-//   it("5.4 l'acheteur initie un paiement et reçoit un clientSecret", async () => {
-//     const { status, data } = await api(
-//       "POST",
-//       "/src/api/paiement/creer",
-//       {
-//         categorieId: ctx.categorieId,
-//         quantite: 2,
-//         nomPorteur: "Jean Acheteur",
-//       },
-//       ctx.acheteurToken,
-//     );
+  it("5.4 l'acheteur initie un paiement et reçoit un clientSecret", async () => {
+    const { status, data } = await api(
+      "POST",
+      "/src/api/paiement/creer",
+      {
+        categorieId: ctx.categorieId,
+        quantite: 2,
+        nomPorteur: "Jean Acheteur",
+      },
+      ctx.acheteurToken,
+    );
 
-//     expect(status).toBe(200);
-//     expect(data.clientSecret).toBeDefined();
-//     expect(data.montantBillets).toBe(7000); // 3500 x 2
-//     expect(data.fraisService).toBe(350); // 5% de 7000
-//     expect(data.montantTotal).toBe(7350); // 7000 + 350
-//   });
+    expect(status).toBe(200);
+    expect(data.clientSecret).toBeDefined();
+    expect(data.montantBillets).toBe(7000); // 3500 x 2
+    expect(data.fraisService).toBe(350); // 5% de 7000
+    expect(data.montantTotal).toBe(7350); // 7000 + 350
+  });
 
-//   it("5.5 le webhook Stripe crée la commande et les billets", async () => {
-//     // Simuler le webhook Stripe payment_intent.succeeded
-//     const payload = JSON.stringify({
-//       type: "payment_intent.succeeded",
-//       data: {
-//         object: {
-//           id: "pi_test_123",
-//           amount: 7350,
-//           metadata: {
-//             categorieId: ctx.categorieId,
-//             quantite: "2",
-//             nomPorteur: "Jean Acheteur",
-//             acheteurId: ctx.acheteurId,
-//             evenementId: ctx.evenementId,
-//           },
-//         },
-//       },
-//     });
+  it("5.5 le webhook Stripe crée la commande et les billets", async () => {
+    // Simuler le webhook Stripe payment_intent.succeeded
+    const payload = JSON.stringify({
+      type: "payment_intent.succeeded",
+      data: {
+        object: {
+          id: "pi_test_123",
+          amount: 7350,
+          metadata: {
+            categorieId: ctx.categorieId,
+            quantite: "2",
+            nomPorteur: "Jean Acheteur",
+            acheteurId: ctx.acheteurId,
+            evenementId: ctx.evenementId,
+          },
+        },
+      },
+    });
 
-//     const res = await fetch(`${BASE}/src/api/paiement/webhook`, {
-//       method: "POST",
-//       headers: {
-//         "Content-Type": "application/json",
-//         "stripe-signature": "test_signature",
-//       },
-//       body: payload,
-//     });
+    const res = await fetch(`${BASE}/src/api/paiement/webhook`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "stripe-signature": "test_signature",
+      },
+      body: payload,
+    });
 
-//     expect(res.status).toBe(200);
-//     const data = await res.json();
-//     expect(data.recu).toBe(true);
-//   });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.recu).toBe(true);
+  });
 
-//   it("5.6 les billets ont été créés après le webhook", async () => {
-//     const { status, data } = await api(
-//       "GET",
-//       "/api/users",
-//       undefined,
-//       ctx.acheteurToken,
-//     );
+  it("5.6 les billets ont été créés après le webhook", async () => {
+    const { status, data } = await api(
+      "GET",
+      "/src/api/users",
+      undefined,
+      ctx.acheteurToken,
+    );
 
-//     expect(status).toBe(200);
-//     expect(data.commandes.length).toBeGreaterThan(0);
+    expect(status).toBe(200);
+    expect(data.commandes.length).toBeGreaterThan(0);
 
-//     const commande = data.commandes[0];
-//     expect(commande.billets.length).toBe(2);
-//     expect(commande.statut).toBe("PAYEE");
+    const commande = data.commandes[0];
+    expect(commande.billets.length).toBe(2);
+    expect(commande.statut).toBe("PAYEE");
 
-//     ctx.commandeId = commande.id;
-//     ctx.billetToken = commande.billets[0].token;
-//   });
-// });
+    ctx.commandeId = commande.id;
+    ctx.billetToken = commande.billets[0].token;
+  });
+});
 
-// // ─────────────────────────────────────────────────────────────
-// // BLOC 6 — SCAN DES BILLETS
-// // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// BLOC 6 — SCAN DES BILLETS
+// ─────────────────────────────────────────────────────────────
 
-// describe("6. Scan des billets", () => {
-//   let agentToken: string;
+describe("6. Scan des billets", () => {
+  let agentToken: string;
 
-//   beforeAll(async () => {
-//     const { data } = await api("POST", "/src/api/auth/connexion", {
-//       email: "agent@test.com",
-//       password: "motdepasse123",
-//     });
-//     agentToken = data.token;
-//   });
+  beforeAll(async () => {
+    const { data } = await api("POST", "/src/api/auth/connexion", {
+      email: "agent@test.com",
+      password: "motdepasse123",
+    });
+    agentToken = data.token;
+  });
 
-//   it("6.1 un non-authentifié ne peut pas scanner", async () => {
-//     const { status } = await api("POST", "/src/api/scan", {
-//       token: ctx.billetToken,
-//       evenementId: ctx.evenementId,
-//     });
+  it("6.1 un non-authentifié ne peut pas scanner", async () => {
+    const { status } = await api("POST", "/src/api/scan", {
+      token: ctx.billetToken,
+      evenementId: ctx.evenementId,
+    });
 
-//     expect(status).toBe(401);
-//   });
+    expect(status).toBe(401);
+  });
 
-//   it("6.2 un token invalide retourne INVALIDE", async () => {
-//     const { status, data } = await api(
-//       "POST",
-//       "/src/api/scan",
-//       { token: "token_invalide", evenementId: ctx.evenementId },
-//       agentToken,
-//     );
+  it("6.2 un token invalide retourne INVALIDE", async () => {
+    const { status, data } = await api(
+      "POST",
+      "/src/api/scan",
+      { token: "token_invalide", evenementId: ctx.evenementId },
+      agentToken,
+    );
 
-//     expect(status).toBe(200);
-//     expect(data.resultat).toBe("INVALIDE");
-//     expect(data.couleur).toBe("ROUGE");
-//   });
+    expect(status).toBe(200);
+    expect(data.resultat).toBe("INVALIDE");
+    expect(data.couleur).toBe("ROUGE");
+  });
 
-//   it("6.3 un billet valide retourne VALIDE", async () => {
-//     const { status, data } = await api(
-//       "POST",
-//       "/src/api/scan",
-//       {
-//         token: ctx.billetToken,
-//         evenementId: ctx.evenementId,
-//         horsLigne: false,
-//       },
-//       agentToken,
-//     );
+  it("6.3 un billet valide retourne VALIDE", async () => {
+    const { status, data } = await api(
+      "POST",
+      "/src/api/scan",
+      {
+        token: ctx.billetToken,
+        evenementId: ctx.evenementId,
+        horsLigne: false,
+      },
+      agentToken,
+    );
 
-//     expect(status).toBe(200);
-//     expect(data.resultat).toBe("VALIDE");
-//     expect(data.couleur).toBe("VERT");
-//     expect(data.billet.porteur).toBe("Jean Acheteur");
-//   });
+    expect(status).toBe(200);
+    expect(data.resultat).toBe("VALIDE");
+    expect(data.couleur).toBe("VERT");
+    expect(data.billet.porteur).toBe("Jean Acheteur");
+  });
 
-//   it("6.4 scanner le même billet retourne DEJA_UTILISE", async () => {
-//     const { data } = await api(
-//       "POST",
-//       "/src/api/scan",
-//       {
-//         token: ctx.billetToken,
-//         evenementId: ctx.evenementId,
-//       },
-//       agentToken,
-//     );
+  it("6.4 scanner le même billet retourne DEJA_UTILISE", async () => {
+    const { data } = await api(
+      "POST",
+      "/src/api/scan",
+      {
+        token: ctx.billetToken,
+        evenementId: ctx.evenementId,
+      },
+      agentToken,
+    );
 
-//     expect(data.resultat).toBe("DEJA_UTILISE");
-//     expect(data.couleur).toBe("ORANGE");
-//     expect(data.premierScan).toBeDefined();
-//   });
+    expect(data.resultat).toBe("DEJA_UTILISE");
+    expect(data.couleur).toBe("ORANGE");
+    expect(data.premierScan).toBeDefined();
+  });
 
-//   it("6.5 un billet d'un autre événement retourne MAUVAIS_EVENEMENT", async () => {
-//     const { data } = await api(
-//       "POST",
-//       "/src/api/scan",
-//       {
-//         token: ctx.billetToken,
-//         evenementId: "evt_autre_123",
-//       },
-//       agentToken,
-//     );
+  it("6.5 un billet d'un autre événement retourne MAUVAIS_EVENEMENT", async () => {
+    const { data } = await api(
+      "POST",
+      "/src/api/scan",
+      {
+        token: ctx.billetToken,
+        evenementId: "evt_autre_123",
+      },
+      agentToken,
+    );
 
-//     expect(data.resultat).toBe("MAUVAIS_EVENEMENT");
-//     expect(data.couleur).toBe("ROUGE");
-//   });
+    expect(data.resultat).toBe("MAUVAIS_EVENEMENT");
+    expect(data.couleur).toBe("ROUGE");
+  });
 
-//   it("6.6 l'agent peut voir les stats de scan", async () => {
-//     const { status, data } = await api(
-//       "GET",
-//       `/src/api/scan?evenementId=${ctx.evenementId}`,
-//       undefined,
-//       agentToken,
-//     );
+  it("6.6 l'agent peut voir les stats de scan", async () => {
+    const { status, data } = await api(
+      "GET",
+      `/src/api/scan?evenementId=${ctx.evenementId}`,
+      undefined,
+      agentToken,
+    );
 
-//     expect(status).toBe(200);
-//     expect(data.entres).toBe(1); // 1 billet scanné
-//     expect(data.total).toBe(2); // 2 billets au total
-//     expect(data.tauxEntree).toBe(50); // 50%
-//   });
-// });
+    expect(status).toBe(200);
+    expect(data.entres).toBe(1); // 1 billet scanné
+    expect(data.total).toBe(2); // 2 billets au total
+    expect(data.tauxEntree).toBe(50); // 50%
+  });
+});
 
-// // ─────────────────────────────────────────────────────────────
-// // BLOC 7 — NETTOYAGE (optionnel en dev)
-// // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// BLOC 7 — RÉPARTITION DES RECETTES (Sprint 6)
+// ─────────────────────────────────────────────────────────────
 
-// describe("7. Nettoyage", () => {
-//   it("7.1 nettoie la base de données de test", async () => {
-//     if (process.env.NODE_ENV === "test") {
-//       await prisma.scan.deleteMany({});
-//       await prisma.billet.deleteMany({});
-//       await prisma.commande.deleteMany({});
-//       await prisma.categorieBillet.deleteMany({});
-//       await prisma.evenement.deleteMany({});
-//       await prisma.userRole.deleteMany({});
-//       await prisma.user.deleteMany({});
-//     }
-//     expect(true).toBe(true);
-//   });
-// });
+describe("7. Répartition des recettes (Sprint 6)", () => {
+  let prestataire2Id: string;
+  let prestataire2Token: string;
+
+  beforeAll(async () => {
+    // Créer un prestataire avec compte Stripe simulé
+    const { data: inscData } = await api("POST", "/src/api/auth/inscription", {
+      email: "dj.kamto@test.com",
+      nom: "DJ Kamto",
+      password: "motdepasse123",
+      role: "PRESTATAIRE",
+    });
+    prestataire2Id = inscData.user.id;
+
+    const { data: loginData } = await api("POST", "/src/api/auth/connexion", {
+      email: "dj.kamto@test.com",
+      password: "motdepasse123",
+    });
+    prestataire2Token = loginData.token;
+  });
+
+  it("7.1 le promoteur peut ajouter un bénéficiaire", async () => {
+    if (!ctx.evenementId || !prestataire2Id) return;
+
+    const { status, data } = await api(
+      "POST",
+      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      {
+        userId: prestataire2Id,
+        role: "DJ",
+        typePart: "POURCENTAGE",
+        valeur: 20, // 20% des recettes
+      },
+      ctx.promoteurToken,
+    );
+
+    expect(status).toBe(201);
+    expect(data.beneficiaire.role).toBe("DJ");
+    expect(data.beneficiaire.valeur).toBe(20);
+  });
+
+  it("7.2 le promoteur voit la liste des bénéficiaires", async () => {
+    if (!ctx.evenementId) return;
+
+    const { status, data } = await api(
+      "GET",
+      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      undefined,
+      ctx.promoteurToken,
+    );
+
+    expect(status).toBe(200);
+    expect(data.beneficiaires.length).toBeGreaterThan(0);
+  });
+
+  it("7.3 refuse la répartition si événement pas terminé", async () => {
+    if (!ctx.evenementId) return;
+
+    const { status, data } = await api(
+      "POST",
+      `/src/api/evenements/${ctx.evenementId}/repartir`,
+      undefined,
+      ctx.promoteurToken,
+    );
+
+    expect(status).toBe(400);
+    expect(data.erreur).toContain("après la fin");
+  });
+
+  it("7.4 refuse si typePart invalide", async () => {
+    if (!ctx.evenementId || !prestataire2Id) return;
+
+    const { status, data } = await api(
+      "POST",
+      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      {
+        userId: prestataire2Id,
+        role: "Technicien",
+        typePart: "INVALIDE",
+        valeur: 500,
+      },
+      ctx.promoteurToken,
+    );
+
+    expect(status).toBe(400);
+    expect(data.erreur).toContain("FIXE ou POURCENTAGE");
+  });
+
+  it("7.5 refuse si pourcentage invalide (> 100)", async () => {
+    if (!ctx.evenementId || !prestataire2Id) return;
+
+    const { status, data } = await api(
+      "POST",
+      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      {
+        userId: prestataire2Id,
+        role: "Test",
+        typePart: "POURCENTAGE",
+        valeur: 150,
+      },
+      ctx.promoteurToken,
+    );
+
+    expect(status).toBe(400);
+    expect(data.erreur).toContain("100");
+  });
+
+  it("7.6 un non-promoteur ne peut pas gérer les bénéficiaires", async () => {
+    if (!ctx.evenementId) return;
+
+    const { status } = await api(
+      "POST",
+      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      {
+        userId: prestataire2Id,
+        role: "DJ",
+        typePart: "FIXE",
+        valeur: 5000,
+      },
+      ctx.acheteurToken,
+    );
+
+    expect(status).toBe(403);
+  });
+});

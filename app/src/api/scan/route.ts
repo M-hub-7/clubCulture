@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/prisma";
+import { verifierRole } from "@/app/lib/verifierRole";
 import { verifierTokenBillet } from "@/app/lib/qrcode";
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ erreur: "Non authentifié" }, { status: 401 });
+    // L'agent peut être authentifié par Bearer JWT ou Auth.js
+    const user = await verifierRole("AGENT");
+
+    if (!user) {
+      return NextResponse.json(
+        { erreur: "Non authentifié ou rôle AGENT requis" },
+        { status: 401 },
+      );
     }
 
     const { token, evenementId, horsLigne } = await request.json();
@@ -19,12 +24,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Vérifier la signature JWT
-    let payload: { billetId: string; evenementId: string };
+    // 1. Vérifier la signature JWT du billet
+    let payload: {
+      billetId: string;
+      evenementId: string;
+    };
+
     try {
       payload = verifierTokenBillet(token);
-    } catch {
-      await enregistrerScan(null, session.user.id, "INVALIDE", horsLigne);
+    } catch (error) {
+      // Affichage temporaire pour identifier la vraie cause
+      // si le JWT est rejeté.
+      console.error("❌ Erreur vérification JWT :", error);
+
       return NextResponse.json({
         resultat: "INVALIDE",
         message: "QR code invalide ou expiré",
@@ -32,7 +44,7 @@ export async function POST(request: Request) {
       });
     }
 
-    // 2. Vérifier que c'est le bon événement
+    // 2. Vérifier que le billet appartient au bon événement
     if (payload.evenementId !== evenementId) {
       return NextResponse.json({
         resultat: "MAUVAIS_EVENEMENT",
@@ -41,13 +53,23 @@ export async function POST(request: Request) {
       });
     }
 
-    // 3. Chercher le billet en base
+    // 3. Chercher le billet en base de données
     const billet = await prisma.billet.findFirst({
-      where: { token },
+      where: {
+        token,
+      },
       include: {
-        scans: { orderBy: { createdAt: "asc" } },
+        scans: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
         categorie: true,
-        commande: { include: { acheteur: true } },
+        commande: {
+          include: {
+            acheteur: true,
+          },
+        },
       },
     });
 
@@ -59,9 +81,15 @@ export async function POST(request: Request) {
       });
     }
 
-    // 4. Vérifier le statut du billet
+    // 4. Vérifier si le billet est remboursé ou annulé
     if (billet.statut === "REMBOURSE" || billet.statut === "ANNULE") {
-      await enregistrerScan(billet.id, session.user.id, "REMBOURSE", horsLigne);
+      await enregistrerScan(
+        billet.id,
+        user.id,
+        "REMBOURSE",
+        Boolean(horsLigne),
+      );
+
       return NextResponse.json({
         resultat: "REMBOURSE",
         message: "Ce billet a été remboursé ou annulé",
@@ -69,14 +97,15 @@ export async function POST(request: Request) {
       });
     }
 
-    // 5. Vérifier si déjà scanné
+    // 5. Vérifier si le billet a déjà été scanné
     if (billet.scans.length > 0) {
       await enregistrerScan(
         billet.id,
-        session.user.id,
+        user.id,
         "DEJA_UTILISE",
-        horsLigne,
+        Boolean(horsLigne),
       );
+
       return NextResponse.json({
         resultat: "DEJA_UTILISE",
         message: "Billet déjà utilisé",
@@ -85,20 +114,25 @@ export async function POST(request: Request) {
       });
     }
 
-    // 6. Billet valide — enregistrer le scan
+    // 6. Billet valide :
+    // enregistrer le scan et marquer le billet comme utilisé.
     await prisma.$transaction(async (tx) => {
       await tx.scan.create({
         data: {
           billetId: billet.id,
-          agentId: session.user.id,
+          agentId: user.id,
           resultat: "VALIDE",
-          horsLigne: horsLigne || false,
+          horsLigne: Boolean(horsLigne),
         },
       });
 
       await tx.billet.update({
-        where: { id: billet.id },
-        data: { statut: "UTILISE" },
+        where: {
+          id: billet.id,
+        },
+        data: {
+          statut: "UTILISE",
+        },
       });
     });
 
@@ -114,33 +148,47 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Erreur scan:", error);
+
     return NextResponse.json({ erreur: "Erreur serveur" }, { status: 500 });
   }
 }
 
-// Fonction utilitaire pour enregistrer les scans échoués
+// Fonction utilitaire pour enregistrer les scans
+// des billets remboursés, annulés ou déjà utilisés.
 async function enregistrerScan(
   billetId: string | null,
   agentId: string,
-  resultat: any,
+  resultat: string,
   horsLigne: boolean,
 ) {
-  if (!billetId) return;
+  if (!billetId) {
+    return;
+  }
+
   try {
     await prisma.scan.create({
-      data: { billetId, agentId, resultat, horsLigne: horsLigne || false },
+      data: {
+        billetId,
+        agentId,
+        resultat: resultat as any,
+        horsLigne: Boolean(horsLigne),
+      },
     });
-  } catch (e) {
-    console.error("Erreur enregistrement scan:", e);
+  } catch (error) {
+    console.error("Erreur enregistrement scan:", error);
   }
 }
 
-// Route GET — Statistiques de scan pour un événement
+// GET — Statistiques de scan
 export async function GET(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ erreur: "Non authentifié" }, { status: 401 });
+    const user = await verifierRole("AGENT");
+
+    if (!user) {
+      return NextResponse.json(
+        { erreur: "Non authentifié ou rôle AGENT requis" },
+        { status: 401 },
+      );
     }
 
     const { searchParams } = new URL(request.url);
@@ -155,13 +203,21 @@ export async function GET(request: Request) {
 
     const stats = await prisma.billet.groupBy({
       by: ["statut"],
-      where: { commande: { evenementId } },
-      _count: { statut: true },
+      where: {
+        commande: {
+          evenementId,
+        },
+      },
+      _count: {
+        statut: true,
+      },
     });
 
     const total = stats.reduce((acc, s) => acc + s._count.statut, 0);
+
     const entres =
       stats.find((s) => s.statut === "UTILISE")?._count.statut || 0;
+
     const valides =
       stats.find((s) => s.statut === "VALIDE")?._count.statut || 0;
 
@@ -172,6 +228,8 @@ export async function GET(request: Request) {
       tauxEntree: total > 0 ? Math.round((entres / total) * 100) : 0,
     });
   } catch (error) {
+    console.error("Erreur GET scan:", error);
+
     return NextResponse.json({ erreur: "Erreur serveur" }, { status: 500 });
   }
 }

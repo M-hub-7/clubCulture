@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/prisma";
 import { stripe } from "@/app/lib/stripe";
+import { verifierRole } from "@/app/lib/verifierRole";
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ erreur: "Non authentifié" }, { status: 401 });
+    // Vérifier l'acheteur connecté via Bearer JWT ou Auth.js
+    const user = await verifierRole("ACHETEUR");
+
+    if (!user) {
+      return NextResponse.json(
+        { erreur: "Non authentifié ou rôle ACHETEUR requis" },
+        { status: 401 },
+      );
     }
 
     const { categorieId, quantite, nomPorteur } = await request.json();
@@ -19,16 +24,29 @@ export async function POST(request: Request) {
       );
     }
 
+    // Vérifier que la quantité est valide
+    const qte = Number(quantite);
+
+    if (!Number.isInteger(qte) || qte <= 0) {
+      return NextResponse.json(
+        { erreur: "La quantité doit être un entier positif" },
+        { status: 400 },
+      );
+    }
+
     // Récupérer la catégorie avec l'événement
     const categorie = await prisma.categorieBillet.findUnique({
       where: { id: categorieId },
       include: {
         evenement: {
-          include: { promoteur: true },
+          include: {
+            promoteur: true,
+          },
         },
       },
     });
 
+    // Catégorie inexistante
     if (!categorie) {
       return NextResponse.json(
         { erreur: "Catégorie introuvable" },
@@ -37,7 +55,7 @@ export async function POST(request: Request) {
     }
 
     // Vérifier les places disponibles
-    if (categorie.vendu + quantite > categorie.quantite) {
+    if (categorie.vendu + qte > categorie.quantite) {
       return NextResponse.json(
         { erreur: "Plus assez de places disponibles" },
         { status: 400 },
@@ -45,8 +63,8 @@ export async function POST(request: Request) {
     }
 
     // Calculer les montants
-    const montantBillets = categorie.prix * quantite;
-    const fraisService = Math.round(montantBillets * 0.05); // 5%
+    const montantBillets = categorie.prix * qte;
+    const fraisService = Math.round(montantBillets * 0.05);
     const montantTotal = montantBillets + fraisService;
 
     // Créer le PaymentIntent Stripe
@@ -55,9 +73,9 @@ export async function POST(request: Request) {
       currency: "eur",
       metadata: {
         categorieId,
-        quantite: String(quantite),
+        quantite: String(qte),
         nomPorteur,
-        acheteurId: session.user.id,
+        acheteurId: user.id,
         evenementId: categorie.evenementId,
       },
     });
@@ -70,6 +88,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Erreur paiement/creer:", error);
+
     return NextResponse.json({ erreur: "Erreur serveur" }, { status: 500 });
   }
 }
