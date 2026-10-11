@@ -11,6 +11,8 @@ const ctx: {
   agentId: string;
   evenementId: string;
   categorieId: string;
+  reservationId: string;
+  paymentIntentId: string;
   commandeId: string;
   billetToken: string;
   billetId: string;
@@ -55,6 +57,7 @@ beforeAll(async () => {
   await prisma.scan.deleteMany({});
   await prisma.billet.deleteMany({});
   await prisma.commande.deleteMany({});
+  await prisma.reservation.deleteMany({});
   await prisma.categorieBillet.deleteMany({});
   await prisma.beneficiaire.deleteMany({});
   await prisma.evenement.deleteMany({});
@@ -77,7 +80,7 @@ afterAll(async () => {
 
 describe("1. Création de l'Admin", () => {
   it("1.1 crée l'administrateur avec la clé secrète", async () => {
-    const res = await fetch(`${BASE}/src/api/admin/setup`, {
+    const res = await fetch(`${BASE}/api//admin/setup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -98,7 +101,7 @@ describe("1. Création de l'Admin", () => {
   });
 
   it("1.2 refuse si la clé secrète est mauvaise", async () => {
-    const res = await fetch(`${BASE}/src/api/admin/setup`, {
+    const res = await fetch(`${BASE}/api//admin/setup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -115,7 +118,7 @@ describe("1. Création de l'Admin", () => {
   });
 
   it("1.3 refuse si un admin existe déjà", async () => {
-    const res = await fetch(`${BASE}/src/api/admin/setup`, {
+    const res = await fetch(`${BASE}/api//admin/setup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -132,7 +135,7 @@ describe("1. Création de l'Admin", () => {
   });
 
   it("1.4 l'admin peut se connecter", async () => {
-    const { status, data } = await api("POST", "/src/api/auth/connexion", {
+    const { status, data } = await api("POST", "/api//auth/connexion", {
       email: "admin@clubculture.com",
       password: "AdminSecret123",
     });
@@ -149,7 +152,7 @@ describe("1. Création de l'Admin", () => {
 
 describe("2. Inscription des utilisateurs", () => {
   it("2.1 un acheteur peut s'inscrire", async () => {
-    const { status, data } = await api("POST", "/src/api/auth/inscription", {
+    const { status, data } = await api("POST", "/api//auth/inscription", {
       email: "acheteur@test.com",
       nom: "Jean Acheteur",
       password: "motdepasse123",
@@ -164,7 +167,7 @@ describe("2. Inscription des utilisateurs", () => {
   });
 
   it("2.2 un promoteur peut s'inscrire", async () => {
-    const { status, data } = await api("POST", "/src/api/auth/inscription", {
+    const { status, data } = await api("POST", "/api//auth/inscription", {
       email: "promoteur@test.com",
       nom: "Marie Promoteur",
       password: "motdepasse123",
@@ -179,7 +182,7 @@ describe("2. Inscription des utilisateurs", () => {
   });
 
   it("2.3 un prestataire peut s'inscrire", async () => {
-    const { status, data } = await api("POST", "/src/api/auth/inscription", {
+    const { status, data } = await api("POST", "/api//auth/inscription", {
       email: "dj@test.com",
       nom: "DJ Kamto",
       password: "motdepasse123",
@@ -192,7 +195,7 @@ describe("2. Inscription des utilisateurs", () => {
   });
 
   it("2.4 refuse si l'email est déjà utilisé", async () => {
-    const { status, data } = await api("POST", "/src/api/auth/inscription", {
+    const { status, data } = await api("POST", "/api//auth/inscription", {
       email: "acheteur@test.com",
       nom: "Doublon",
       password: "motdepasse123",
@@ -204,7 +207,7 @@ describe("2. Inscription des utilisateurs", () => {
   });
 
   it("2.5 refuse si le rôle est ADMIN ou AGENT", async () => {
-    const { status } = await api("POST", "/src/api/auth/inscription", {
+    const { status } = await api("POST", "/api//auth/inscription", {
       email: "faux@admin.com",
       nom: "Faux Admin",
       password: "motdepasse123",
@@ -215,7 +218,7 @@ describe("2. Inscription des utilisateurs", () => {
   });
 
   it("2.6 refuse si le mot de passe est trop court", async () => {
-    const { status, data } = await api("POST", "/src/api/auth/inscription", {
+    const { status, data } = await api("POST", "/api//auth/inscription", {
       email: "new@test.com",
       nom: "Test",
       password: "123",
@@ -227,7 +230,7 @@ describe("2. Inscription des utilisateurs", () => {
   });
 
   it("2.7 le promoteur peut se connecter", async () => {
-    const { status, data } = await api("POST", "/src/api/auth/connexion", {
+    const { status, data } = await api("POST", "/api//auth/connexion", {
       email: "promoteur@test.com",
       password: "motdepasse123",
     });
@@ -238,7 +241,7 @@ describe("2. Inscription des utilisateurs", () => {
   });
 
   it("2.8 l'acheteur peut se connecter", async () => {
-    const { status, data } = await api("POST", "/src/api/auth/connexion", {
+    const { status, data } = await api("POST", "/api//auth/connexion", {
       email: "acheteur@test.com",
       password: "motdepasse123",
     });
@@ -256,7 +259,7 @@ describe("3. Gestion des rôles par l'Admin", () => {
   it("3.1 l'admin peut voir tous les utilisateurs", async () => {
     const { status, data } = await api(
       "GET",
-      "/src/api/admin/users",
+      "/api//admin/users",
       undefined,
       ctx.adminToken,
     );
@@ -268,7 +271,7 @@ describe("3. Gestion des rôles par l'Admin", () => {
   it("3.2 l'admin peut créer un agent directement", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/admin/users",
+      "/api//admin/users",
       {
         email: "agent@test.com",
         nom: "Agent Sécurité",
@@ -286,7 +289,7 @@ describe("3. Gestion des rôles par l'Admin", () => {
   it("3.3 l'admin peut ajouter un rôle à un utilisateur existant", async () => {
     const { status, data } = await api(
       "POST",
-      `/src/api/admin/users/${ctx.acheteurId}/roles`,
+      `/api//admin/users/${ctx.acheteurId}/roles`,
       { role: "PROMOTEUR" },
       ctx.adminToken,
     );
@@ -299,7 +302,7 @@ describe("3. Gestion des rôles par l'Admin", () => {
   it("3.4 l'admin peut retirer un rôle", async () => {
     const { status, data } = await api(
       "DELETE",
-      `/src/api/admin/users/${ctx.acheteurId}/roles`,
+      `/api//admin/users/${ctx.acheteurId}/roles`,
       { role: "PROMOTEUR" },
       ctx.adminToken,
     );
@@ -311,7 +314,7 @@ describe("3. Gestion des rôles par l'Admin", () => {
   it("3.5 refuse de retirer le dernier rôle", async () => {
     const { status, data } = await api(
       "DELETE",
-      `/src/api/admin/users/${ctx.acheteurId}/roles`,
+      `/api//admin/users/${ctx.acheteurId}/roles`,
       { role: "ACHETEUR" },
       ctx.adminToken,
     );
@@ -323,7 +326,7 @@ describe("3. Gestion des rôles par l'Admin", () => {
   it("3.6 un non-admin ne peut pas accéder aux routes admin", async () => {
     const { status } = await api(
       "GET",
-      "/src/api/admin/users",
+      "/api//admin/users",
       undefined,
       ctx.acheteurToken,
     );
@@ -340,7 +343,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.1 un acheteur ne peut pas créer un événement", async () => {
     const { status } = await api(
       "POST",
-      "/src/api/evenements",
+      "/api//evenements",
       {
         titre: "Test",
         description: "Test",
@@ -358,7 +361,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.2 le promoteur peut créer un événement", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/evenements",
+      "/api//evenements",
       {
         titre: "Soirée Afrobeats Paris",
         description: "La plus grande soirée afrobeats de l'année",
@@ -371,12 +374,12 @@ describe("4. Création et gestion des événements", () => {
         categories: [
           {
             libelle: "VIP",
-            prix: 8000,
+            prix: 80,
             quantite: 50,
           },
           {
             libelle: "Standard",
-            prix: 3500,
+            prix: 35,
             quantite: 200,
           },
         ],
@@ -397,7 +400,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.3 refuse si les champs obligatoires manquent", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/evenements",
+      "/api//evenements",
       { titre: "Incomplet" },
       ctx.promoteurToken,
     );
@@ -409,7 +412,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.4 refuse si la date de fin est avant la date de début", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/evenements",
+      "/api//evenements",
       {
         titre: "Test",
         description: "Test",
@@ -428,7 +431,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.5 l'événement est visible par le promoteur en brouillon", async () => {
     const { status, data } = await api(
       "GET",
-      `/src/api/evenements/${ctx.evenementId}`,
+      `/api//evenements/${ctx.evenementId}`,
       undefined,
       ctx.promoteurToken,
     );
@@ -438,10 +441,7 @@ describe("4. Création et gestion des événements", () => {
   });
 
   it("4.6 l'événement brouillon n'est pas visible publiquement", async () => {
-    const { status } = await api(
-      "GET",
-      `/src/api/evenements/${ctx.evenementId}`,
-    );
+    const { status } = await api("GET", `/api//evenements/${ctx.evenementId}`);
 
     expect(status).toBe(404);
   });
@@ -449,7 +449,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.7 le promoteur peut modifier son événement", async () => {
     const { status, data } = await api(
       "PUT",
-      `/src/api/evenements/${ctx.evenementId}`,
+      `/api//evenements/${ctx.evenementId}`,
       { titre: "Soirée Afrobeats Paris — Édition Spéciale" },
       ctx.promoteurToken,
     );
@@ -461,7 +461,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.8 le promoteur soumet son événement à la modération", async () => {
     const { status, data } = await api(
       "POST",
-      `/src/api/evenements/${ctx.evenementId}/publier`,
+      `/api//evenements/${ctx.evenementId}/publier`,
       undefined,
       ctx.promoteurToken,
     );
@@ -473,7 +473,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.9 l'admin valide et publie l'événement", async () => {
     const { status, data } = await api(
       "PUT",
-      `/src/api/admin/evenements/${ctx.evenementId}/valider`,
+      `/api//admin/evenements/${ctx.evenementId}/valider`,
       { decision: "PUBLIE" },
       ctx.adminToken,
     );
@@ -485,7 +485,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.10 l'événement publié est visible publiquement", async () => {
     const { status, data } = await api(
       "GET",
-      `/src/api/evenements/${ctx.evenementId}`,
+      `/api//evenements/${ctx.evenementId}`,
     );
 
     expect(status).toBe(200);
@@ -494,10 +494,7 @@ describe("4. Création et gestion des événements", () => {
   });
 
   it("4.11 la liste publique contient l'événement", async () => {
-    const { status, data } = await api(
-      "GET",
-      "/src/api/evenements?ville=Paris",
-    );
+    const { status, data } = await api("GET", "/api//evenements?ville=Paris");
 
     expect(status).toBe(200);
     expect(data.evenements.some((e: any) => e.id === ctx.evenementId)).toBe(
@@ -508,7 +505,7 @@ describe("4. Création et gestion des événements", () => {
   it("4.12 le promoteur voit ses statistiques", async () => {
     const { status, data } = await api(
       "GET",
-      "/src/api/promoteur/evenements",
+      "/api//promoteur/evenements",
       undefined,
       ctx.promoteurToken,
     );
@@ -526,7 +523,7 @@ describe("4. Création et gestion des événements", () => {
 
 describe("5. Paiement", () => {
   it("5.1 un non-authentifié ne peut pas initier un paiement", async () => {
-    const { status } = await api("POST", "/src/api/paiement/creer", {
+    const { status } = await api("POST", "/api//paiement/creer", {
       categorieId: ctx.categorieId,
       quantite: 2,
       nomPorteur: "Jean Acheteur",
@@ -538,7 +535,7 @@ describe("5. Paiement", () => {
   it("5.2 retourne 404 si catégorie inexistante", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/paiement/creer",
+      "/api//paiement/creer",
       {
         categorieId: "cat_inexistant",
         quantite: 1,
@@ -554,7 +551,7 @@ describe("5. Paiement", () => {
   it("5.3 retourne 400 si plus assez de places", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/paiement/creer",
+      "/api//paiement/creer",
       {
         categorieId: ctx.categorieId,
         quantite: 999,
@@ -570,7 +567,7 @@ describe("5. Paiement", () => {
   it("5.4 l'acheteur initie un paiement et reçoit un clientSecret", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/paiement/creer",
+      "/api//paiement/creer",
       {
         categorieId: ctx.categorieId,
         quantite: 2,
@@ -583,7 +580,12 @@ describe("5. Paiement", () => {
     expect(data.clientSecret).toBeDefined();
     expect(data.montantBillets).toBe(7000); // 3500 x 2
     expect(data.fraisService).toBe(350); // 5% de 7000
-    expect(data.montantTotal).toBe(7350); // 7000 + 350
+    expect(data.montantTotal).toBe(7350); // 7000 centimes + 350 centimes de frais
+    expect(data.reservationId).toBeDefined();
+    expect(data.expireAt).toBeDefined();
+    ctx.reservationId = data.reservationId;
+    const reservation = await prisma.reservation.findUnique({ where: { id: data.reservationId } });
+    ctx.paymentIntentId = reservation!.paymentIntentId!;
   });
 
   it("5.5 le webhook Stripe crée la commande et les billets", async () => {
@@ -592,9 +594,12 @@ describe("5. Paiement", () => {
       type: "payment_intent.succeeded",
       data: {
         object: {
-          id: "pi_test_123",
+          id: ctx.paymentIntentId,
           amount: 7350,
+          currency: "eur",
+          status: "succeeded",
           metadata: {
+            reservationId: ctx.reservationId,
             categorieId: ctx.categorieId,
             quantite: "2",
             nomPorteur: "Jean Acheteur",
@@ -605,7 +610,7 @@ describe("5. Paiement", () => {
       },
     });
 
-    const res = await fetch(`${BASE}/src/api/paiement/webhook`, {
+    const res = await fetch(`${BASE}/api//paiement/webhook`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -622,7 +627,7 @@ describe("5. Paiement", () => {
   it("5.6 les billets ont été créés après le webhook", async () => {
     const { status, data } = await api(
       "GET",
-      "/src/api/users",
+      "/api//users",
       undefined,
       ctx.acheteurToken,
     );
@@ -647,7 +652,7 @@ describe("6. Scan des billets", () => {
   let agentToken: string;
 
   beforeAll(async () => {
-    const { data } = await api("POST", "/src/api/auth/connexion", {
+    const { data } = await api("POST", "/api//auth/connexion", {
       email: "agent@test.com",
       password: "motdepasse123",
     });
@@ -655,7 +660,7 @@ describe("6. Scan des billets", () => {
   });
 
   it("6.1 un non-authentifié ne peut pas scanner", async () => {
-    const { status } = await api("POST", "/src/api/scan", {
+    const { status } = await api("POST", "/api//scan", {
       token: ctx.billetToken,
       evenementId: ctx.evenementId,
     });
@@ -666,7 +671,7 @@ describe("6. Scan des billets", () => {
   it("6.2 un token invalide retourne INVALIDE", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/scan",
+      "/api//scan",
       { token: "token_invalide", evenementId: ctx.evenementId },
       agentToken,
     );
@@ -679,7 +684,7 @@ describe("6. Scan des billets", () => {
   it("6.3 un billet valide retourne VALIDE", async () => {
     const { status, data } = await api(
       "POST",
-      "/src/api/scan",
+      "/api//scan",
       {
         token: ctx.billetToken,
         evenementId: ctx.evenementId,
@@ -697,7 +702,7 @@ describe("6. Scan des billets", () => {
   it("6.4 scanner le même billet retourne DEJA_UTILISE", async () => {
     const { data } = await api(
       "POST",
-      "/src/api/scan",
+      "/api//scan",
       {
         token: ctx.billetToken,
         evenementId: ctx.evenementId,
@@ -713,7 +718,7 @@ describe("6. Scan des billets", () => {
   it("6.5 un billet d'un autre événement retourne MAUVAIS_EVENEMENT", async () => {
     const { data } = await api(
       "POST",
-      "/src/api/scan",
+      "/api//scan",
       {
         token: ctx.billetToken,
         evenementId: "evt_autre_123",
@@ -728,7 +733,7 @@ describe("6. Scan des billets", () => {
   it("6.6 l'agent peut voir les stats de scan", async () => {
     const { status, data } = await api(
       "GET",
-      `/src/api/scan?evenementId=${ctx.evenementId}`,
+      `/api//scan?evenementId=${ctx.evenementId}`,
       undefined,
       agentToken,
     );
@@ -750,7 +755,7 @@ describe("7. Répartition des recettes (Sprint 6)", () => {
 
   beforeAll(async () => {
     // Créer un prestataire avec compte Stripe simulé
-    const { data: inscData } = await api("POST", "/src/api/auth/inscription", {
+    const { data: inscData } = await api("POST", "/api//auth/inscription", {
       email: "dj.kamto@test.com",
       nom: "DJ Kamto",
       password: "motdepasse123",
@@ -758,7 +763,7 @@ describe("7. Répartition des recettes (Sprint 6)", () => {
     });
     prestataire2Id = inscData.user.id;
 
-    const { data: loginData } = await api("POST", "/src/api/auth/connexion", {
+    const { data: loginData } = await api("POST", "/api//auth/connexion", {
       email: "dj.kamto@test.com",
       password: "motdepasse123",
     });
@@ -770,7 +775,7 @@ describe("7. Répartition des recettes (Sprint 6)", () => {
 
     const { status, data } = await api(
       "POST",
-      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      `/api//evenements/${ctx.evenementId}/beneficiaires`,
       {
         userId: prestataire2Id,
         role: "DJ",
@@ -790,7 +795,7 @@ describe("7. Répartition des recettes (Sprint 6)", () => {
 
     const { status, data } = await api(
       "GET",
-      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      `/api//evenements/${ctx.evenementId}/beneficiaires`,
       undefined,
       ctx.promoteurToken,
     );
@@ -804,7 +809,7 @@ describe("7. Répartition des recettes (Sprint 6)", () => {
 
     const { status, data } = await api(
       "POST",
-      `/src/api/evenements/${ctx.evenementId}/repartir`,
+      `/api//evenements/${ctx.evenementId}/repartir`,
       undefined,
       ctx.promoteurToken,
     );
@@ -818,7 +823,7 @@ describe("7. Répartition des recettes (Sprint 6)", () => {
 
     const { status, data } = await api(
       "POST",
-      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      `/api//evenements/${ctx.evenementId}/beneficiaires`,
       {
         userId: prestataire2Id,
         role: "Technicien",
@@ -837,7 +842,7 @@ describe("7. Répartition des recettes (Sprint 6)", () => {
 
     const { status, data } = await api(
       "POST",
-      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      `/api//evenements/${ctx.evenementId}/beneficiaires`,
       {
         userId: prestataire2Id,
         role: "Test",
@@ -856,7 +861,7 @@ describe("7. Répartition des recettes (Sprint 6)", () => {
 
     const { status } = await api(
       "POST",
-      `/src/api/evenements/${ctx.evenementId}/beneficiaires`,
+      `/api//evenements/${ctx.evenementId}/beneficiaires`,
       {
         userId: prestataire2Id,
         role: "DJ",
