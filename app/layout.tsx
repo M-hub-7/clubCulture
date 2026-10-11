@@ -1,38 +1,34 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
-
+import { Inter, Montserrat } from "next/font/google";
 import "./globals.css";
 
-import { AuthProvider } from "@/app/lib/auth";
-import Navbar from "@/components/layout/Navbar";
-import Footer from "@/components/layout/Footer";
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
+
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  weight: ["700", "800"],
+  variable: "--font-montserrat",
+});
 
 export const metadata: Metadata = {
-  title: "Club Culture — la scène afro-caribéenne",
-  description:
-    "Afrobeats, Dancehall, Amapiano : billetterie et événements.",
+  title: "Club Culture — Midnight Tropical",
+  description: "Plateforme de billetterie afro-caribéenne",
 };
-
-const FONTS_URL =
-  "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Montserrat:wght@700;800;900&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap";
 
 export default function RootLayout({
   children,
 }: {
-  children: ReactNode;
+  children: React.ReactNode;
 }) {
   return (
-    <html lang="fr">
-      <head>
-        <link rel="stylesheet" href={FONTS_URL} />
-      </head>
-
-      <body>
-        <AuthProvider>
-          <Navbar />
-          <main>{children}</main>
-          <Footer />
-        </AuthProvider>
+    <html lang="fr" className="dark">
+      <body
+        className={`${inter.variable} ${montserrat.variable} bg-surface-deep`}
+      >
+        {children}
       </body>
     </html>
   );

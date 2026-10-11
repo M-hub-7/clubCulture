@@ -1,13 +1,9 @@
+import { auth } from "@/app/lib/auth";
+import { prisma } from "@/app/lib/prisma";
 import { jwtVerify } from "jose";
 import { headers } from "next/headers";
-import { prisma } from "@/app/lib/prisma";
 
-type Role =
-  | "ACHETEUR"
-  | "PROMOTEUR"
-  | "AGENT"
-  | "PRESTATAIRE"
-  | "ADMIN";
+type Role = "ACHETEUR" | "PROMOTEUR" | "AGENT" | "PRESTATAIRE" | "ADMIN";
 
 async function getUserFromBearerToken() {
   try {
@@ -19,30 +15,27 @@ async function getUserFromBearerToken() {
       return null;
     }
 
-    const token = authorization.substring(7).trim();
+    const token = authorization.substring(7);
 
-    if (!token) {
+    const secret = process.env.NEXTAUTH_SECRET;
+
+    if (!secret) {
+      console.error("NEXTAUTH_SECRET n'est pas défini");
       return null;
     }
 
-    const secretValue = process.env.NEXTAUTH_SECRET;
+    const { payload } = await jwtVerify(
+      token,
+      new TextEncoder().encode(secret),
+    );
 
-    if (!secretValue) {
-      console.error("NEXTAUTH_SECRET n'est pas défini.");
-      return null;
-    }
-
-    const secret = new TextEncoder().encode(secretValue);
-
-    const { payload } = await jwtVerify(token, secret);
-
-    if (typeof payload.id !== "string" || !payload.id) {
+    if (!payload.id) {
       return null;
     }
 
     const user = await prisma.user.findUnique({
       where: {
-        id: payload.id,
+        id: payload.id as string,
       },
       include: {
         roles: true,
@@ -51,31 +44,90 @@ async function getUserFromBearerToken() {
 
     return user;
   } catch (error) {
-    console.error("Erreur vérification Bearer JWT :", error);
+    console.error("Erreur vérification Bearer JWT:", error);
     return null;
   }
 }
 
 export async function verifierRole(role: Role) {
-  const user = await getUserFromBearerToken();
+  /*
+   * 1. On essaie d'abord le JWT Bearer utilisé
+   *    par notre API de connexion.
+   */
+  const bearerUser = await getUserFromBearerToken();
+
+  if (bearerUser) {
+    const estAdmin = bearerUser.roles.some((r) => r.role === "ADMIN");
+
+    if (estAdmin) {
+      return bearerUser;
+    }
+
+    const aLeRole = bearerUser.roles.some((r) => r.role === role);
+
+    return aLeRole ? bearerUser : null;
+  }
+
+  /*
+   * 2. Si aucun Bearer JWT n'est présent,
+   *    on conserve le fonctionnement Auth.js.
+   */
+  const session = await auth();
+
+  if (!session?.user) {
+    return null;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: {
+      id: session.user.id,
+    },
+    include: {
+      roles: true,
+    },
+  });
 
   if (!user) {
     return null;
   }
 
-  const roles = user.roles.map((r) => r.role);
+  // Admin a accès à tout
+  const estAdmin = user.roles.some((r) => r.role === "ADMIN");
 
-  if (roles.includes("ADMIN")) {
+  if (estAdmin) {
     return user;
   }
 
-  if (roles.includes(role)) {
-    return user;
-  }
+  const aLeRole = user.roles.some((r) => r.role === role);
 
-  return null;
+  return aLeRole ? user : null;
 }
 
 export async function getSessionUser() {
-  return getUserFromBearerToken();
+  /*
+   * Vérifier d'abord le Bearer JWT
+   */
+  const bearerUser = await getUserFromBearerToken();
+
+  if (bearerUser) {
+    return bearerUser;
+  }
+
+  /*
+   * Sinon utiliser Auth.js
+   */
+  const session = await auth();
+
+  if (!session?.user) {
+    return null;
+  }
+
+  return prisma.user.findUnique({
+    where: {
+      id: session.user.id,
+    },
+    include: {
+      roles: true,
+    },
+  });
 }

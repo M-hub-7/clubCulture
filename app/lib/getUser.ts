@@ -3,125 +3,33 @@ import { jwtVerify } from "jose";
 
 export async function getUser(request: Request) {
   try {
-    // ============================================================
-    // 1. RÉCUPÉRER LE TOKEN
-    // ============================================================
-
     const authHeader = request.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) return null;
 
-    console.log("🔐 Authorization :", authHeader ? "présente" : "absente");
-
-    if (!authHeader?.startsWith("Bearer ")) {
-      console.log("❌ Aucun Bearer token");
-      return null;
-    }
-
-    const token = authHeader.substring(7);
-
-    if (!token) {
-      console.log("❌ Token vide");
-      return null;
-    }
-
-    // ============================================================
-    // 2. VÉRIFIER LE JWT
-    // ============================================================
-
-    const secretValue = process.env.NEXTAUTH_SECRET;
-
-    if (!secretValue) {
-      console.error("❌ NEXTAUTH_SECRET est manquante");
-      return null;
-    }
-
-    const secret = new TextEncoder().encode(secretValue);
+    const token = authHeader.split(" ")[1];
+    const secret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET!);
 
     const { payload } = await jwtVerify(token, secret);
 
-    console.log("✅ JWT valide");
-    console.log("📦 Payload JWT :", payload);
-
-    // ============================================================
-    // 3. RÉCUPÉRER L'ID UTILISATEUR
-    // ============================================================
-
-    const userId = typeof payload.id === "string" ? payload.id : null;
-
-    if (!userId) {
-      console.log("❌ Aucun ID utilisateur dans le JWT");
-      return null;
-    }
-
-    // ============================================================
-    // 4. RÉCUPÉRER L'UTILISATEUR ET SES VRAIS RÔLES EN BASE
-    // ============================================================
-
-    const user = await prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
-      include: {
-        roles: true,
-      },
-    });
-
-    if (!user) {
-      console.log("❌ Utilisateur introuvable en base :", userId);
-      return null;
-    }
-
-    const roles = user.roles.map((role) => role.role);
-
-    console.log("👤 Utilisateur :", {
-      id: user.id,
-      email: user.email,
-      nom: user.nom,
-      roles,
-    });
-
-    // ============================================================
-    // 5. RETOURNER LA SESSION
-    // ============================================================
-
     return {
       user: {
-        id: user.id,
-        email: user.email,
-        nom: user.nom,
-        roles,
+        id: payload.id as string,
+        email: payload.email as string,
+        nom: payload.nom as string,
+        roles: payload.roles as string[],
       },
     };
-  } catch (error) {
-    console.error("❌ Erreur getUser :", error);
+  } catch {
     return null;
   }
 }
 
 export async function verifierRoleUser(request: Request, role: string) {
   const session = await getUser(request);
+  if (!session) return null;
 
-  if (!session) {
-    console.log("❌ Aucune session valide");
-    return null;
-  }
+  // Admin a accès à tout
+  if (session.user.roles.includes("ADMIN")) return session;
 
-  const roles = session.user.roles;
-
-  console.log("🔑 Rôles de l'utilisateur :", roles);
-  console.log("🎯 Rôle demandé :", role);
-
-  // ADMIN possède tous les droits
-  if (roles.includes("ADMIN")) {
-    console.log("✅ Accès ADMIN accordé");
-    return session;
-  }
-
-  // Vérification du rôle demandé
-  if (roles.includes(role)) {
-    console.log(`✅ Accès ${role} accordé`);
-    return session;
-  }
-
-  console.log(`❌ Accès ${role} refusé`);
-  return null;
+  return session.user.roles.includes(role) ? session : null;
 }

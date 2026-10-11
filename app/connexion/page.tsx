@@ -1,167 +1,121 @@
 "use client";
 
-import type { FormEvent } from "react";
-import Image from "next/image";
-import Link from "next/link";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/app/lib/auth";
-import { homeFor } from "@/app/lib/constants";
-import { useAction, useForm } from "@/app/lib/hooks";
-import AuthCard from "@/components/auth/AuthCard";
-import { Alert, Field } from "@/components/ui";
+import { authAPI, saveToken, saveUser } from "@/lib/api-client";
 
-function validerEmail(email: string): string | null {
-  if (!email.trim()) {
-    return "L’adresse email est obligatoire.";
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  if (!emailRegex.test(email.trim())) {
-    return "Veuillez saisir une adresse email valide.";
-  }
-
-  return null;
-}
-
-function validerMotDePasseConnexion(password: string): string | null {
-  if (!password) {
-    return "Le mot de passe est obligatoire.";
-  }
-
-  if (password.length < 8) {
-    return "Le mot de passe doit contenir au moins 8 caractères.";
-  }
-
-  return null;
-}
-
-export default function ConnexionPage() {
-  const { login } = useAuth();
+export default function Connexion() {
   const router = useRouter();
 
-  const { f, bind } = useForm({
-    email: "",
-    password: "",
-  });
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [loading, setLoading] = useState(false);
+  const [erreur, setErreur] = useState("");
 
-  const action = useAction();
-
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  async function connecter(e: React.FormEvent) {
     e.preventDefault();
+    setLoading(true);
+    setErreur("");
 
-    void action.run(async () => {
-      const email = f.email.trim();
-      const password = f.password;
+    try {
+      const data = await authAPI.connecter(form);
 
-      const erreurEmail = validerEmail(email);
+      // Sauvegarder token et user dans localStorage
+      saveToken(data.token);
+      saveUser(data.user);
 
-      if (erreurEmail) {
-        throw new Error(erreurEmail);
-      }
+      // Rediriger selon le rôle
+      const roles: string[] = data.user.roles;
 
-      const erreurPassword = validerMotDePasseConnexion(password);
-
-      if (erreurPassword) {
-        throw new Error(erreurPassword);
-      }
-
-      const user = await login(email, password);
-
-      if (!user) {
-        throw new Error("Impossible de récupérer les informations du compte.");
-      }
-
-      const next = new URLSearchParams(window.location.search).get("next");
-
-      router.push(next || homeFor(user.roles));
-    });
-  };
+      if (roles.includes("ADMIN")) return router.push("/admin/dashboard");
+      if (roles.includes("PROMOTEUR"))
+        return router.push("/promoteur/dashboard");
+      if (roles.includes("AGENT")) return router.push("/agent/scan");
+      if (roles.includes("PRESTATAIRE"))
+        return router.push("/prestataire/dashboard");
+      return router.push("/evenements");
+    } catch (e: any) {
+      setErreur(e.message || "Email ou mot de passe incorrect");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <main className="min-h-screen bg-[#090D2D] px-4 py-10 text-white sm:px-6 lg:py-16">
-      <div className="mx-auto flex w-full max-w-md flex-col items-center">
-        {/* LOGO */}
-        <Link
-          href="/"
-          className="mb-7 inline-flex items-center justify-center transition-opacity hover:opacity-90"
-          aria-label="Club Culture - Accueil"
-        >
-          <Image
-            src="/images/club-culture-logo.jpg"
-            alt="Club Culture"
-            width={170}
-            height={70}
-            priority
-            className="h-auto max-h-20 w-auto rounded-xl object-contain"
-          />
-        </Link>
-
-        {/* FORMULAIRE */}
-        <AuthCard
-          title="Connexion"
-          subtitle="Accédez à vos billets, événements et espace personnel."
-          onSubmit={submit}
-        >
-          <div className="space-y-5">
-            <Field
-              label="Email"
-              type="email"
-              autoComplete="email"
-              placeholder="exemple@email.com"
-              {...bind("email")}
-              required
-            />
-
-            <Field
-              label="Mot de passe"
-              type="password"
-              autoComplete="current-password"
-              placeholder="Votre mot de passe"
-              {...bind("password")}
-              required
-            />
-
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-white/40">Minimum 8 caractères</p>
-
-              <Link
-                href="/mot-de-passe-oublie"
-                className="text-xs font-semibold text-[#F5A623] transition-colors hover:text-[#ffc15c] hover:underline"
-              >
-                Mot de passe oublié ?
-              </Link>
-            </div>
-
-            <Alert>{action.error}</Alert>
-
-            <button
-              type="submit"
-              className="btn w-full disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={action.busy}
-            >
-              {action.busy ? "Connexion…" : "Se connecter"}
-            </button>
-
-            <p className="text-center text-xs text-white/45">
-              Pas encore de compte ?{" "}
-              <Link
-                href="/inscription"
-                className="font-semibold text-[#F5A623] hover:text-[#ffc15c] hover:underline"
-              >
-                Créer un compte
-              </Link>
-            </p>
-          </div>
-        </AuthCard>
-
-        <Link
-          href="/"
-          className="mt-6 text-sm text-white/45 transition-colors hover:text-white"
-        >
-          ← Retour à l'accueil
-        </Link>
+    <div className="min-h-screen bg-surface-deep flex flex-col items-center justify-center px-margin-x">
+      {/* Logo */}
+      <div className="mb-stack-lg text-center">
+        <h1 className="font-montserrat font-extrabold text-primary text-headline-xl tracking-tight">
+          CLUB
+        </h1>
+        <h1 className="font-montserrat font-extrabold text-on-surface text-headline-xl tracking-tight -mt-3">
+          CULTURE
+        </h1>
+        <p className="text-on-surface-muted text-sm mt-2 font-inter">
+          Midnight Tropical
+        </p>
       </div>
-    </main>
+
+      {/* Formulaire */}
+      <form onSubmit={connecter} className="w-full max-w-sm space-y-4">
+        {erreur && (
+          <div className="bg-error-container text-error-red rounded-xl p-4 text-sm font-inter text-center">
+            {erreur}
+          </div>
+        )}
+
+        {/* Email */}
+        <div>
+          <label className="text-label-xs text-on-surface-muted uppercase tracking-widest font-inter block mb-2">
+            Email
+          </label>
+          <input
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            placeholder="ton@email.com"
+            required
+            className="w-full bg-surface-card border border-outline-variant text-on-surface rounded-full px-5 py-3.5 text-sm font-inter outline-none focus:border-primary transition-colors placeholder:text-on-surface-muted"
+          />
+        </div>
+
+        {/* Mot de passe */}
+        <div>
+          <label className="text-label-xs text-on-surface-muted uppercase tracking-widest font-inter block mb-2">
+            Mot de passe
+          </label>
+          <input
+            type="password"
+            value={form.password}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, password: e.target.value }))
+            }
+            placeholder="••••••••"
+            required
+            className="w-full bg-surface-card border border-outline-variant text-on-surface rounded-full px-5 py-3.5 text-sm font-inter outline-none focus:border-primary transition-colors placeholder:text-on-surface-muted"
+          />
+        </div>
+
+        {/* Bouton */}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-accent-amber text-on-primary font-montserrat font-bold rounded-full py-4 text-base mt-2 disabled:opacity-50 transition-opacity"
+        >
+          {loading ? "Connexion..." : "Se connecter"}
+        </button>
+
+        {/* Lien inscription */}
+        <p className="text-center text-on-surface-muted text-sm font-inter">
+          Pas encore de compte ?{" "}
+          <button
+            type="button"
+            onClick={() => router.push("/inscription")}
+            className="text-primary font-semibold"
+          >
+            S'inscrire
+          </button>
+        </p>
+      </form>
+    </div>
   );
 }

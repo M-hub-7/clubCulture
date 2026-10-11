@@ -26,29 +26,13 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  roles           UserRole[]
-  evenements      Evenement[]
-  commandes       Commande[]
-  reservations    Reservation[]
-  beneficiaires   Beneficiaire[]
-  scans           Scan[]
-  accounts        Account[]
-  sessions        Session[]
-
-  passwordResetTokens PasswordResetToken[]
-}
-
-model PasswordResetToken {
-  id        String   @id @default(cuid())
-  tokenHash String   @unique
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
+  roles         UserRole[]
+  evenements    Evenement[]
+  commandes     Commande[]
+  beneficiaires Beneficiaire[]
+  scans         Scan[]
+  accounts      Account[]
+  sessions      Session[]
 }
 
 model UserRole {
@@ -114,7 +98,6 @@ model Evenement {
   dateFin     DateTime
   styles      String[]
   statut      StatutEvenement @default(BROUILLON)
-  motifModeration String?
   promoteurId String
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
@@ -122,25 +105,21 @@ model Evenement {
   promoteur     User              @relation(fields: [promoteurId], references: [id])
   categories    CategorieBillet[]
   commandes     Commande[]
-  reservations  Reservation[]
   beneficiaires Beneficiaire[]
 }
 
 model CategorieBillet {
   id          String   @id @default(cuid())
   libelle     String
-  /// Prix unitaire en euros entiers (ex. 35 signifie 35,00 €); conversion en centimes uniquement à l'appel Stripe.
   prix        Int
   quantite    Int
   vendu       Int      @default(0)
-  reserve     Int      @default(0)
   ouverture   DateTime
   fermeture   DateTime
   evenementId String
 
   evenement Evenement @relation(fields: [evenementId], references: [id], onDelete: Cascade)
   billets   Billet[]
-  reservations Reservation[]
 }
 
 // ─── BILLETTERIE ─────────────────────────────────────────────
@@ -149,42 +128,15 @@ model Commande {
   id              String         @id @default(cuid())
   acheteurId      String
   evenementId     String
-  /// Montant total débité, en centimes EUR (unité Stripe).
   montantTotal    Int
-  /// Frais de service, en centimes EUR.
   fraisService    Int
   statut          StatutCommande @default(EN_ATTENTE)
-  stripePaymentId String?        @unique
-  reservationId   String?        @unique
+  stripePaymentId String?
   createdAt       DateTime       @default(now())
 
   acheteur  User      @relation(fields: [acheteurId], references: [id])
   evenement Evenement @relation(fields: [evenementId], references: [id])
   billets   Billet[]
-  reservation Reservation? @relation(fields: [reservationId], references: [id])
-}
-
-model Reservation {
-  id              String   @id @default(cuid())
-  acheteurId      String
-  categorieId     String
-  evenementId     String
-  quantite        Int
-  nomPorteur      String
-  statut          String   @default("ACTIVE")
-  expireAt        DateTime
-  paymentIntentId String?  @unique
-  requestKey      String?  @unique
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  acheteur  User            @relation(fields: [acheteurId], references: [id], onDelete: Cascade)
-  categorie CategorieBillet @relation(fields: [categorieId], references: [id], onDelete: Cascade)
-  evenement Evenement      @relation(fields: [evenementId], references: [id], onDelete: Cascade)
-  commande  Commande?
-
-  @@index([statut, expireAt])
-  @@index([acheteurId, createdAt])
 }
 
 model Billet {
@@ -261,20 +213,16 @@ enum StatutEvenement {
 
 enum StatutCommande {
   EN_ATTENTE
-  EN_ATTENTE_VALIDATION // Paiement confirmé par Stripe, en attente d'approbation admin
-  PAYEE                // Billet validé et émît
-  ANNULEE
+  PAYEE
   REMBOURSEE
-  REFUSEE
+  ECHOUEE
 }
 
 enum StatutBillet {
-  EN_ATTENTE_VALIDATION
   VALIDE
   UTILISE
   ANNULE
   REMBOURSE
-  REFUSE
 }
 
 enum ResultatScan {

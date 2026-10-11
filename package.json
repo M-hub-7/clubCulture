@@ -9,16 +9,13 @@
     "lint": "eslint",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push"
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.9.1",
-    "@stripe/react-stripe-js": "^7.0.0",
-    "@stripe/stripe-js": "^10.0.0",
+    "@stripe/stripe-js": "^9.14.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -32,8 +29,7 @@
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-icons": "^5.7.0",
-    "resend": "^6.31.0",
+    "resend": "^6.22.0",
     "stripe": "^22.5.0",
     "tailwind-merge": "^3.6.0"
   },
@@ -47,7 +43,6 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/supertest": "^7.2.1",
-    "dotenv": "^16.4.7",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
     "jest": "^30.5.1",
