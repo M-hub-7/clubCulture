@@ -3,6 +3,7 @@
  * Pour changer une route backend, modifiez UNIQUEMENT ce fichier.
  */
 import { api } from "./api";
+import type { Manifeste } from "./scanStore";
 import type {
   AdminTicketsResponse,
   AdminUser,
@@ -12,6 +13,7 @@ import type {
   Commande,
   CreateUserPayload,
   EvenementAdmin,
+  EvenementScan,
   Evenement,
   EvenementPromoteur,
   EventPayload,
@@ -119,8 +121,16 @@ export const promoteurService = {
 
 // ─── Agent de scan ────────────────────────────────────────────────────────
 export const scanService = {
-  scan: (token: string, evenementId: string, horsLigne: boolean) =>
-    api<ScanResponse>("/scan", { method: "POST", body: { token, evenementId, horsLigne } }),
+  scan: (token: string, evenementId: string, horsLigne = false, scanneA?: string) =>
+    api<ScanResponse>("/scan", {
+      method: "POST",
+      body: { token, evenementId, horsLigne, scanneA },
+    }),
+
+  events: () => api<EvenementScan[]>("/scan/evenements"),
+
+  manifest: (evenementId: string) =>
+    api<Manifeste>(`/scan/manifest${qs({ evenementId })}`),
 
   stats: (evenementId: string) => api<ScanStatsData>(`/scan${qs({ evenementId })}`),
 };

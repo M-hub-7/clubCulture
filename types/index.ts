@@ -157,6 +157,18 @@ export interface ScanResponse {
   couleur: CouleurScan;
   premierScan?: string;
   billet?: { numero: number; porteur: string; categorie: string };
+  /** Verdict rendu sur l'appareil, sans réseau (sera confirmé à la synchronisation). */
+  horsLigne?: boolean;
+}
+
+/** Événement proposé à l'agent de scan. */
+export interface EvenementScan {
+  id: string;
+  titre: string;
+  lieu: string;
+  ville: string;
+  dateDebut: string;
+  dateFin: string;
 }
 
 export interface ScanStatsData {

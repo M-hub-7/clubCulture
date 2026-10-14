@@ -5,7 +5,7 @@ import ScannerPanel from "@/components/agent/ScannerPanel";
 
 export default function ScanPage() {
   return (
-    <Guard roles={["AGENT"]}>
+    <Guard roles={["AGENT", "ADMIN"]}>
       <ScannerPanel />
     </Guard>
   );

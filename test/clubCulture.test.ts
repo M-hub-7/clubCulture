@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import Stripe from "stripe";
 import { prisma } from "@/app/lib/prisma";
 
@@ -802,6 +803,69 @@ describe("6. Scan des billets", () => {
     expect(data.entres).toBe(1); // 1 billet scanné
     expect(data.total).toBe(2); // 2 billets au total
     expect(data.tauxEntree).toBe(50); // 50%
+  });
+
+  it("6.7 l'agent voit l'événement publié dans la liste de scan", async () => {
+    const { status, data } = await api(
+      "GET",
+      "/api/scan/evenements",
+      undefined,
+      agentToken,
+    );
+
+    expect(status).toBe(200);
+    expect(data.map((e: { id: string }) => e.id)).toContain(ctx.evenementId);
+  });
+
+  it("6.8 la liste hors ligne contient l'empreinte du QR, jamais le QR", async () => {
+    const { status, data } = await api(
+      "GET",
+      `/api/scan/manifest?evenementId=${ctx.evenementId}`,
+      undefined,
+      agentToken,
+    );
+
+    expect(status).toBe(200);
+    const empreinte = createHash("sha256").update(ctx.billetToken).digest("hex");
+    const billet = data.billets.find((b: { h: string }) => b.h === empreinte);
+    expect(billet.statut).toBe("UTILISE");
+    expect(JSON.stringify(data)).not.toContain(ctx.billetToken);
+  });
+
+  it("6.9 un scan rejoué après coupure garde l'heure réelle du passage", async () => {
+    const second = await prisma.billet.findFirst({
+      where: { commandeId: ctx.commandeId, id: { not: ctx.billetId } },
+    });
+    const scanneA = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+    const { data } = await api(
+      "POST",
+      "/api/scan",
+      {
+        token: second!.token,
+        evenementId: ctx.evenementId,
+        horsLigne: true,
+        scanneA,
+      },
+      agentToken,
+    );
+    expect(data.resultat).toBe("VALIDE");
+
+    const scan = await prisma.scan.findFirst({
+      where: { billetId: second!.id, resultat: "VALIDE" },
+    });
+    expect(scan!.horsLigne).toBe(true);
+    expect(scan!.createdAt.toISOString()).toBe(scanneA);
+
+    // Rejoué une seconde fois (autre appareil) : conflit signalé
+    const replay = await api(
+      "POST",
+      "/api/scan",
+      { token: second!.token, evenementId: ctx.evenementId, horsLigne: true, scanneA },
+      agentToken,
+    );
+    expect(replay.data.resultat).toBe("DEJA_UTILISE");
+    expect(replay.data.premierScan).toBe(scanneA);
   });
 });
 

@@ -19,6 +19,22 @@ validation admin (QR signé, `VALIDE`) → scan (`UTILISE`). Un refus admin remb
 Unités : `CategorieBillet.prix` en **euros entiers** ; montants Stripe, `Commande` et
 parts FIXE des bénéficiaires en **centimes** (voir `MODIFICATIONS-TECHNIQUES.md`).
 
+## Scan à l'entrée (`/agent/scan`)
+
+1. L'agent choisit l'événement : l'appareil télécharge la liste de ses billets
+   (`GET /api/scan/manifest`) — empreintes SHA-256 des QR, jamais les QR eux-mêmes.
+2. **En ligne**, chaque QR est vérifié par le serveur (`POST /api/scan`, passage
+   `VALIDE → UTILISE` atomique : un billet n'entre qu'une fois, même avec plusieurs portes).
+3. **Hors ligne**, le QR est vérifié sur l'appareil contre la liste : vert / orange (déjà
+   passé sur cet appareil) / rouge (inconnu, remboursé, autre événement). Le passage est
+   gardé en file (IndexedDB) avec son heure réelle.
+4. Au retour du réseau (et chaque minute), la file est envoyée ; les billets acceptés hors
+   ligne mais déjà passés ailleurs apparaissent dans « Conflits ». La liste est rafraîchie.
+
+Limite : hors ligne, deux portes sans réseau ne se voient pas — un même billet peut passer
+une fois par appareil ; le conflit est signalé à la synchronisation. La caméra exige HTTPS
+(ou `localhost`) ; sinon, utiliser la saisie manuelle.
+
 ## Démarrage
 
 ```bash

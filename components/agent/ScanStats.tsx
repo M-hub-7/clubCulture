@@ -1,7 +1,7 @@
 import { Bar } from "@/components/ui";
-import type { ScanStatsData } from "@/types";
+import type { StatsScan } from "@/app/lib/useScanner";
 
-export default function ScanStats({ stats }: { stats: ScanStatsData }) {
+export default function ScanStats({ stats }: { stats: StatsScan }) {
   return (
     <div className="card">
       <div className="mb-2 flex justify-between text-xs uppercase tracking-widest text-on-surface-muted">

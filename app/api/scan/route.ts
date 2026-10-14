@@ -16,7 +16,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const { token, evenementId, horsLigne } = await request.json();
+    const { token, evenementId, horsLigne, scanneA } = await request.json();
+
+    // Scan rejoué après une coupure : on garde l'heure réelle du passage (48 h max)
+    const dateScan = dateDuScan(horsLigne ? scanneA : undefined);
 
     if (!token || !evenementId) {
       return NextResponse.json(
@@ -58,11 +61,6 @@ export async function POST(request: Request) {
         token,
       },
       include: {
-        scans: {
-          orderBy: {
-            createdAt: "asc",
-          },
-        },
         categorie: true,
         commande: {
           include: {
@@ -125,6 +123,7 @@ export async function POST(request: Request) {
           agentId: user.id,
           resultat: maj.count === 1 ? "VALIDE" : "DEJA_UTILISE",
           horsLigne: Boolean(horsLigne),
+          createdAt: dateScan,
         },
       });
 
@@ -132,13 +131,17 @@ export async function POST(request: Request) {
     });
 
     if (!entreeAccordee) {
-      const premierScan = billet.scans.find((s) => s.resultat === "VALIDE");
+      // Relu après la transaction : un autre agent a pu valider entre-temps
+      const premierScan = await prisma.scan.findFirst({
+        where: { billetId: billet.id, resultat: "VALIDE" },
+        orderBy: { createdAt: "asc" },
+      });
 
       return NextResponse.json({
         resultat: "DEJA_UTILISE",
         message: "Billet déjà utilisé",
         couleur: "ORANGE",
-        premierScan: premierScan?.createdAt ?? billet.scans[0]?.createdAt,
+        premierScan: premierScan?.createdAt,
       });
     }
 
@@ -157,6 +160,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ erreur: "Erreur serveur" }, { status: 500 });
   }
+}
+
+function dateDuScan(scanneA: unknown): Date | undefined {
+  if (typeof scanneA !== "string") return undefined;
+  const d = new Date(scanneA);
+  const age = Date.now() - d.getTime();
+  return Number.isFinite(age) && age >= 0 && age < 48 * 3600 * 1000
+    ? d
+    : undefined;
 }
 
 // Fonction utilitaire pour enregistrer les scans
@@ -219,13 +231,14 @@ export async function GET(request: Request) {
       },
     });
 
-    const total = stats.reduce((acc, s) => acc + s._count.statut, 0);
-
     const entres =
       stats.find((s) => s.statut === "UTILISE")?._count.statut || 0;
 
     const valides =
       stats.find((s) => s.statut === "VALIDE")?._count.statut || 0;
+
+    // Billets qui donnent droit à l'entrée (remboursés/refusés/en attente exclus)
+    const total = entres + valides;
 
     return NextResponse.json({
       total,
