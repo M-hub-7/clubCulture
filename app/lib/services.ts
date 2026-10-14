@@ -8,6 +8,7 @@ import type {
   AdminUser,
   Beneficiaire,
   BeneficiaryPayload,
+  BilletEnAttente,
   Commande,
   CreateUserPayload,
   EvenementAdmin,
@@ -78,7 +79,7 @@ export const eventsService = {
 
 // ─── Billets & paiement (acheteur) ────────────────────────────────────────
 export const ticketsService = {
-  mine: () => api<Commande[]>("/billets"),
+  mine: () => api<Commande[]>("/billets/mes"),
 
   createPayment: (body: PaymentPayload, requestKey?: string) =>
     api<PaymentIntentResponse>("/paiement/creer", { method: "POST", body, headers: requestKey ? { "Idempotency-Key": requestKey } : {} }),
@@ -171,6 +172,15 @@ export const adminService = {
     api<MessageResponse>(`/admin/users/${id}/roles`, { method: "PUT", body: { roles } }),
 
   // Billets & remboursements
+  pendingTickets: async () =>
+    (await api<{ billets: BilletEnAttente[] }>("/billets")).billets,
+
+  validateTicket: (id: string) =>
+    api<MessageResponse>(`/admin/billets/${id}/valider`, { method: "POST" }),
+
+  refuseTicket: (id: string) =>
+    api<MessageResponse>(`/admin/billets/${id}/refuser`, { method: "POST" }),
+
   tickets: (evenementId: string, statut?: StatutBillet | "") =>
     api<AdminTicketsResponse>("/admin/billets" + qs({ evenementId, statut })),
 

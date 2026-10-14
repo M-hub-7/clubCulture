@@ -1,12 +1,19 @@
 /**
  * Types partagés du frontend, alignés sur les réponses du backend (Prisma).
- * Les montants sont en CENTIMES, les dates arrivent en chaînes ISO (JSON).
+ * Montants de commande/Stripe en CENTIMES ; prix des catégories en EUROS entiers.
+ * Les dates arrivent en chaînes ISO (JSON).
  */
 
 // ─── Enums ────────────────────────────────────────────────────────────────
 export type Role = "ACHETEUR" | "PROMOTEUR" | "AGENT" | "PRESTATAIRE" | "ADMIN";
 export type StatutEvenement = "BROUILLON" | "EN_MODERATION" | "PUBLIE" | "ANNULE" | "TERMINE";
-export type StatutBillet = "VALIDE" | "UTILISE" | "ANNULE" | "REMBOURSE";
+export type StatutBillet =
+  | "EN_ATTENTE_VALIDATION"
+  | "VALIDE"
+  | "UTILISE"
+  | "ANNULE"
+  | "REMBOURSE"
+  | "REFUSE";
 export type StatutBeneficiaire = "EN_ATTENTE" | "PAYE" | string;
 export type TypePart = "FIXE" | "POURCENTAGE";
 export type CouleurScan = "VERT" | "ORANGE" | "ROUGE";
@@ -168,6 +175,20 @@ export interface BilletAdmin {
   categorie: { libelle: string };
   commande: { acheteur: { nom: string | null; email: string } };
   scans: { id: string; createdAt: string; resultat: string }[];
+}
+
+/** Billet en attente de validation administrative (GET /api/billets). */
+export interface BilletEnAttente {
+  id: string;
+  numero: number;
+  nomPorteur: string;
+  statut: StatutBillet;
+  categorie: {
+    libelle: string;
+    prix: number;
+    evenement: { id: string; titre: string; dateDebut: string; lieu: string };
+  };
+  commande: { acheteur: { id: string; nom: string | null; email: string } };
 }
 
 export interface TicketStatsData {

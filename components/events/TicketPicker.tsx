@@ -25,7 +25,8 @@ export default function TicketPicker({ event }: { event: Evenement }) {
   });
 
   const cat = event.categories.find((c) => c.id === sel.id);
-  const subtotal = cat ? cat.prix * sel.q : 0;
+  // prix en euros, PriceSummary attend des centimes
+  const subtotal = cat ? cat.prix * sel.q * 100 : 0;
 
   const step = (c: Categorie, delta: number) => {
     const current = sel.id === c.id ? sel.q : 0;

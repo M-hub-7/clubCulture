@@ -10,6 +10,8 @@ const BADGE_COLORS: Record<string, string> = {
   UTILISE: "bg-surface-high text-on-surface-muted",
   REMBOURSE: "bg-error-container/40 text-error",
   ANNULE: "bg-error-container/40 text-error",
+  REFUSE: "bg-error-container/40 text-error",
+  EN_ATTENTE_VALIDATION: "bg-accent-amber/15 text-accent-amber",
 };
 
 export const Badge = ({ s }: { s: string }) => (
@@ -18,7 +20,7 @@ export const Badge = ({ s }: { s: string }) => (
       BADGE_COLORS[s] || "bg-surface-high"
     }`}
   >
-    {String(s).replace("_", " ")}
+    {String(s).replaceAll("_", " ")}
   </span>
 );
 
