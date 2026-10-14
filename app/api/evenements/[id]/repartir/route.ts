@@ -3,6 +3,34 @@ import { prisma } from "@/app/lib/prisma";
 import { verifierRoleUser } from "@/app/lib/getUser";
 import { stripe } from "@/app/lib/stripe";
 
+/** Billets qui génèrent encore une recette (les remboursés/refusés en sont exclus). */
+const STATUTS_ENCAISSES = ["VALIDE", "UTILISE"] as const;
+
+/**
+ * Réserve le versement d'un bénéficiaire : crée un Versement EN_ATTENTE
+ * s'il n'en a aucun EN_ATTENTE/EFFECTUE. Transaction sérialisable : deux
+ * requêtes simultanées ne peuvent pas réserver le même bénéficiaire.
+ */
+async function reserverVersement(beneficiaireId: string, montant: number) {
+  try {
+    return await prisma.$transaction(
+      async (tx) => {
+        const existant = await tx.versement.findFirst({
+          where: { beneficiaireId, statut: { in: ["EN_ATTENTE", "EFFECTUE"] } },
+        });
+        if (existant) return null;
+        return tx.versement.create({
+          data: { beneficiaireId, montant, statut: "EN_ATTENTE" },
+        });
+      },
+      { isolationLevel: "Serializable" },
+    );
+  } catch {
+    // Conflit de sérialisation : une autre requête traite ce bénéficiaire
+    return null;
+  }
+}
+
 // POST — Déclencher la répartition des recettes
 export async function POST(
   request: Request,
@@ -16,13 +44,17 @@ export async function POST(
 
     const { id } = await params;
 
-    // Récupérer l'événement avec toutes ses données
     const evenement = await prisma.evenement.findUnique({
       where: { id },
       include: {
         commandes: {
           where: { statut: "PAYEE" },
-          include: { billets: true },
+          include: {
+            billets: {
+              where: { statut: { in: [...STATUTS_ENCAISSES] } },
+              include: { categorie: { select: { prix: true } } },
+            },
+          },
         },
         beneficiaires: {
           include: {
@@ -44,7 +76,13 @@ export async function POST(
       return NextResponse.json({ erreur: "Accès refusé" }, { status: 403 });
     }
 
-    // Vérifier que l'événement est terminé
+    if (evenement.statut !== "PUBLIE" && evenement.statut !== "TERMINE") {
+      return NextResponse.json(
+        { erreur: "Seul un événement publié ou terminé peut être réparti" },
+        { status: 400 },
+      );
+    }
+
     if (new Date() < new Date(evenement.dateFin)) {
       return NextResponse.json(
         {
@@ -55,20 +93,10 @@ export async function POST(
       );
     }
 
-    // Vérifier qu'il n'y a pas déjà eu de répartition
-    const dejaReparti = evenement.beneficiaires.some(
-      (b) => b.versements.length > 0,
-    );
-    if (dejaReparti) {
-      return NextResponse.json(
-        { erreur: "La répartition a déjà été effectuée" },
-        { status: 400 },
-      );
-    }
-
-    // Calculer les recettes totales nettes (sans les frais plateforme)
+    // Recettes nettes en centimes : prix (euros) des billets encore encaissés, hors frais
     const recettesTotales = evenement.commandes.reduce(
-      (acc, c) => acc + (c.montantTotal - c.fraisService),
+      (acc, c) =>
+        acc + c.billets.reduce((s, b) => s + b.categorie.prix * 100, 0),
       0,
     );
 
@@ -79,53 +107,74 @@ export async function POST(
       );
     }
 
-    // Calculer et effectuer les versements
-    const versementsEffectues = [];
+    const parts = evenement.beneficiaires.map((b) => ({
+      beneficiaire: b,
+      montant:
+        b.typePart === "FIXE"
+          ? b.valeur
+          : Math.floor((recettesTotales * b.valeur) / 100),
+    }));
 
-    for (const beneficiaire of evenement.beneficiaires) {
+    const totalParts = parts.reduce((acc, p) => acc + p.montant, 0);
+    if (totalParts > recettesTotales) {
+      return NextResponse.json(
+        {
+          erreur: `Les parts (${(totalParts / 100).toFixed(2)} €) dépassent les recettes (${(recettesTotales / 100).toFixed(2)} €)`,
+        },
+        { status: 400 },
+      );
+    }
+
+    const versementsEffectues = [];
+    const ignores: { beneficiaire: string | null; raison: string }[] = [];
+
+    for (const { beneficiaire, montant } of parts) {
+      if (montant <= 0) continue;
+
       if (!beneficiaire.user.stripeAccountId) {
-        console.warn(`⚠️ Pas de compte Stripe pour ${beneficiaire.user.email}`);
+        ignores.push({
+          beneficiaire: beneficiaire.user.nom,
+          raison: "Pas de compte Stripe connecté",
+        });
         continue;
       }
 
-      // Calculer le montant du versement
-      let montant: number;
-      if (beneficiaire.typePart === "FIXE") {
-        montant = beneficiaire.valeur;
-      } else {
-        montant = Math.round((recettesTotales * beneficiaire.valeur) / 100);
+      const versement = await reserverVersement(beneficiaire.id, montant);
+      if (!versement) {
+        ignores.push({
+          beneficiaire: beneficiaire.user.nom,
+          raison: "Déjà versé ou en cours",
+        });
+        continue;
       }
 
-      if (montant <= 0) continue;
-
       try {
-        // Effectuer le transfert via Stripe Connect
-        const transfert = await stripe.transfers.create({
-          amount: montant,
-          currency: "eur",
-          destination: beneficiaire.user.stripeAccountId,
-          metadata: {
-            evenementId: id,
-            beneficiaireId: beneficiaire.id,
-            role: beneficiaire.role,
+        // Clé d'idempotence = id du versement : un rejeu ne crée pas de second virement
+        const transfert = await stripe.transfers.create(
+          {
+            amount: montant,
+            currency: "eur",
+            destination: beneficiaire.user.stripeAccountId,
+            metadata: {
+              evenementId: id,
+              beneficiaireId: beneficiaire.id,
+              versementId: versement.id,
+              role: beneficiaire.role,
+            },
           },
-        });
+          { idempotencyKey: `versement-${versement.id}` },
+        );
 
-        // Enregistrer le versement en base
-        const versement = await prisma.versement.create({
-          data: {
-            beneficiaireId: beneficiaire.id,
-            montant,
-            statut: "EFFECTUE",
-            stripeTransferId: transfert.id,
-          },
-        });
-
-        // Mettre à jour le statut du bénéficiaire
-        await prisma.beneficiaire.update({
-          where: { id: beneficiaire.id },
-          data: { statut: "PAYE" },
-        });
+        await prisma.$transaction([
+          prisma.versement.update({
+            where: { id: versement.id },
+            data: { statut: "EFFECTUE", stripeTransferId: transfert.id },
+          }),
+          prisma.beneficiaire.update({
+            where: { id: beneficiaire.id },
+            data: { statut: "PAYE" },
+          }),
+        ]);
 
         versementsEffectues.push({
           beneficiaire: beneficiaire.user.nom,
@@ -135,27 +184,29 @@ export async function POST(
           stripeTransferId: transfert.id,
         });
       } catch (error) {
-        console.error(
-          `Erreur versement pour ${beneficiaire.user.email}:`,
-          error,
-        );
+        console.error(`Erreur versement ${versement.id}:`, error);
 
-        await prisma.versement.create({
-          data: {
-            beneficiaireId: beneficiaire.id,
-            montant,
-            statut: "ECHOUE",
-          },
+        // ECHOUE libère le bénéficiaire : une nouvelle répartition pourra réessayer
+        await prisma.versement.update({
+          where: { id: versement.id },
+          data: { statut: "ECHOUE" },
+        });
+        ignores.push({
+          beneficiaire: beneficiaire.user.nom,
+          raison: "Virement Stripe refusé",
         });
       }
     }
 
     return NextResponse.json({
-      message: "Répartition effectuée avec succès",
+      message: ignores.length
+        ? "Répartition partielle"
+        : "Répartition effectuée avec succès",
       recettesTotales,
       recettesTotalesFormatees: `${(recettesTotales / 100).toFixed(2)} €`,
       versementsEffectues,
       nombreVersements: versementsEffectues.length,
+      ignores,
     });
   } catch (error) {
     console.error("Erreur répartition:", error);

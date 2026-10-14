@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { verifierRole } from "@/app/lib/verifierRole";
 import { verifierTokenBillet } from "@/app/lib/qrcode";
+import type { ResultatScan } from "@/app/generated/prisma/enums";
 
 export async function POST(request: Request) {
   try {
@@ -33,9 +34,7 @@ export async function POST(request: Request) {
     try {
       payload = verifierTokenBillet(token);
     } catch (error) {
-      // Affichage temporaire pour identifier la vraie cause
-      // si le JWT est rejeté.
-      console.error("❌ Erreur vérification JWT :", error);
+      console.warn("QR rejeté :", error instanceof Error ? error.message : error);
 
       return NextResponse.json({
         resultat: "INVALIDE",
@@ -82,7 +81,11 @@ export async function POST(request: Request) {
     }
 
     // 4. Vérifier si le billet est remboursé ou annulé
-    if (billet.statut === "REMBOURSE" || billet.statut === "ANNULE") {
+    if (
+      billet.statut === "REMBOURSE" ||
+      billet.statut === "ANNULE" ||
+      billet.statut === "REFUSE"
+    ) {
       await enregistrerScan(
         billet.id,
         user.id,
@@ -97,44 +100,47 @@ export async function POST(request: Request) {
       });
     }
 
-    // 5. Vérifier si le billet a déjà été scanné
-    if (billet.scans.length > 0) {
-      await enregistrerScan(
-        billet.id,
-        user.id,
-        "DEJA_UTILISE",
-        Boolean(horsLigne),
-      );
+    // 5. Seul un billet VALIDE (validé par l'admin, non utilisé) ouvre l'entrée
+    if (billet.statut !== "VALIDE" && billet.statut !== "UTILISE") {
+      await enregistrerScan(billet.id, user.id, "INVALIDE", Boolean(horsLigne));
+
+      return NextResponse.json({
+        resultat: "INVALIDE",
+        message: "Billet non validé ou refusé",
+        couleur: "ROUGE",
+      });
+    }
+
+    // 6. Passage VALIDE → UTILISE atomique : si deux agents scannent le même
+    // billet en même temps, un seul obtient VALIDE.
+    const entreeAccordee = await prisma.$transaction(async (tx) => {
+      const maj = await tx.billet.updateMany({
+        where: { id: billet.id, statut: "VALIDE" },
+        data: { statut: "UTILISE" },
+      });
+
+      await tx.scan.create({
+        data: {
+          billetId: billet.id,
+          agentId: user.id,
+          resultat: maj.count === 1 ? "VALIDE" : "DEJA_UTILISE",
+          horsLigne: Boolean(horsLigne),
+        },
+      });
+
+      return maj.count === 1;
+    });
+
+    if (!entreeAccordee) {
+      const premierScan = billet.scans.find((s) => s.resultat === "VALIDE");
 
       return NextResponse.json({
         resultat: "DEJA_UTILISE",
         message: "Billet déjà utilisé",
         couleur: "ORANGE",
-        premierScan: billet.scans[0].createdAt,
+        premierScan: premierScan?.createdAt ?? billet.scans[0]?.createdAt,
       });
     }
-
-    // 6. Billet valide :
-    // enregistrer le scan et marquer le billet comme utilisé.
-    await prisma.$transaction(async (tx) => {
-      await tx.scan.create({
-        data: {
-          billetId: billet.id,
-          agentId: user.id,
-          resultat: "VALIDE",
-          horsLigne: Boolean(horsLigne),
-        },
-      });
-
-      await tx.billet.update({
-        where: {
-          id: billet.id,
-        },
-        data: {
-          statut: "UTILISE",
-        },
-      });
-    });
 
     return NextResponse.json({
       resultat: "VALIDE",
@@ -158,7 +164,7 @@ export async function POST(request: Request) {
 async function enregistrerScan(
   billetId: string | null,
   agentId: string,
-  resultat: string,
+  resultat: ResultatScan,
   horsLigne: boolean,
 ) {
   if (!billetId) {
@@ -170,7 +176,7 @@ async function enregistrerScan(
       data: {
         billetId,
         agentId,
-        resultat: resultat as any,
+        resultat,
         horsLigne: Boolean(horsLigne),
       },
     });

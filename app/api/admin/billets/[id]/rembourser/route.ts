@@ -35,42 +35,79 @@ export async function POST(
       );
     }
 
-    if (billet.statut === "REMBOURSE") {
+    if (billet.statut !== "VALIDE") {
       return NextResponse.json(
-        { erreur: "Ce billet est déjà remboursé" },
+        {
+          erreur:
+            billet.statut === "EN_ATTENTE_VALIDATION"
+              ? "Billet non validé : utilisez « Refuser »"
+              : `Impossible de rembourser un billet ${billet.statut.toLowerCase()}`,
+        },
         { status: 400 },
       );
     }
 
-    if (billet.statut === "UTILISE") {
+    if (!billet.commande.stripePaymentId) {
       return NextResponse.json(
-        { erreur: "Impossible de rembourser un billet déjà utilisé" },
+        { erreur: "Aucun paiement Stripe associé à cette commande" },
         { status: 400 },
       );
     }
 
-    // Calculer le montant à rembourser (prix du billet sans les frais)
+    // Montant à rembourser : prix du billet (euros → centimes), sans les frais
     const montantRemboursement = billet.categorie.prix * 100;
 
-    // Effectuer le remboursement via Stripe
-    if (billet.commande.stripePaymentId) {
-      await stripe.refunds.create({
-        payment_intent: billet.commande.stripePaymentId,
-        amount: montantRemboursement,
-        reason: "requested_by_customer",
-      });
-    }
-
-    // Mettre à jour le statut du billet
-    await prisma.billet.update({
-      where: { id },
+    // Réservation atomique VALIDE → REMBOURSE : un double clic ne rembourse qu'une fois
+    const reserve = await prisma.billet.updateMany({
+      where: { id, statut: "VALIDE" },
       data: { statut: "REMBOURSE" },
     });
 
-    // Décrémenter les places vendues
-    await prisma.categorieBillet.update({
-      where: { id: billet.categorieId },
-      data: { vendu: { decrement: 1 } },
+    if (reserve.count !== 1) {
+      return NextResponse.json(
+        { erreur: "Ce billet vient d'être traité" },
+        { status: 409 },
+      );
+    }
+
+    try {
+      await stripe.refunds.create(
+        {
+          payment_intent: billet.commande.stripePaymentId,
+          amount: montantRemboursement,
+          reason: "requested_by_customer",
+          metadata: { billetId: id },
+        },
+        { idempotencyKey: `remboursement-billet-${id}` },
+      );
+    } catch (error) {
+      // Échec Stripe : le billet redevient valide
+      await prisma.billet.update({
+        where: { id },
+        data: { statut: "VALIDE" },
+      });
+      throw error;
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.categorieBillet.updateMany({
+        where: { id: billet.categorieId, vendu: { gt: 0 } },
+        data: { vendu: { decrement: 1 } },
+      });
+
+      // Commande entièrement remboursée si plus aucun billet actif
+      const actifs = await tx.billet.count({
+        where: {
+          commandeId: billet.commandeId,
+          statut: { in: ["VALIDE", "UTILISE", "EN_ATTENTE_VALIDATION"] },
+        },
+      });
+      if (actifs === 0) {
+        await tx.commande.update({
+          where: { id: billet.commandeId },
+          data: { statut: "REMBOURSEE" },
+        });
+      }
     });
 
     return NextResponse.json({
