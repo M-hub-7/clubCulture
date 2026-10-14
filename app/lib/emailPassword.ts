@@ -1,5 +1,12 @@
 import { Resend } from "resend";
 
+const echapperHtml = (texte: string) =>
+  texte.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+
 interface EmailReinitialisationParams {
   email: string;
   nom?: string | null;
@@ -13,11 +20,6 @@ export async function envoyerEmailReinitialisation({
 }: EmailReinitialisationParams) {
   const apiKey = process.env.RESEND_API_KEY;
 
-  console.log("========== RESEND TEST ==========");
-  console.log("API KEY présente :", !!apiKey);
-  console.log("Destinataire :", email);
-  console.log("=================================");
-
   if (!apiKey) {
     throw new Error("RESEND_API_KEY manquante");
   }
@@ -30,28 +32,27 @@ export async function envoyerEmailReinitialisation({
 
     to: [email],
 
-    subject: "Test - Réinitialisation Club Culture",
+    subject: "Réinitialisation de votre mot de passe Club Culture",
 
     html: `
       <h1>Club Culture</h1>
 
-      <p>Bonjour ${nom || "Utilisateur"},</p>
+      <p>Bonjour ${echapperHtml(nom || "")},</p>
 
       <p>
-        Ceci est un test de l'envoi d'email de récupération.
+        Vous avez demandé à réinitialiser votre mot de passe. Ce lien est
+        valable pour une durée limitée :
       </p>
 
       <p>
-        <a href="${resetUrl}">
+        <a href="${echapperHtml(resetUrl)}">
           Réinitialiser mon mot de passe
         </a>
       </p>
+
+      <p>Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.</p>
     `,
   });
-
-  console.log("========== REPONSE RESEND ==========");
-  console.log(JSON.stringify(result, null, 2));
-  console.log("=====================================");
 
   if (result.error) {
     throw new Error(`Resend error: ${result.error.message}`);

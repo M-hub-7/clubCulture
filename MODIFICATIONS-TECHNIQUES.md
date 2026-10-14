@@ -9,7 +9,7 @@
 
 ## Correctifs inclus
 
-- Le webhook crée les billets avant de signer chaque QR code avec le véritable `billet.id`.
+- Le webhook crée les billets en `EN_ATTENTE_VALIDATION` (jeton provisoire `PENDING-…`) ; le QR code signé (`JWT_SECRET`) n'est émis qu'à la validation admin (`POST /api/admin/billets/[id]/valider`), valable jusqu'à la fin de l'événement + 7 jours.
 - L'unicité du `stripePaymentId` et l'association unique entre commande et réservation empêchent l'émission de commandes/billets en double pour un PaymentIntent. La création de PaymentIntent utilise une clé d'idempotence Stripe stable liée à la réservation.
 - Les montants sont vérifiés dans le webhook avant d'émettre des billets. Les paiements arrivés après expiration ou incohérents sont remboursés au lieu de générer des billets.
 - Une réservation atomique bloque le stock pendant 15 minutes; le job protégé `GET /api/cron/expirer-reservations` traite les réservations expirées.
@@ -21,7 +21,7 @@
 1. Sauvegarder la base de données.
 2. Installer les dépendances avec `npm install`.
 3. Appliquer les changements de schéma sans conversion des prix : `npx prisma db push` puis `npx prisma generate`.
-4. Configurer `DATABASE_URL`, `NEXTAUTH_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` et `CRON_SECRET` dans l'environnement serveur.
+4. Configurer les variables listées dans `.env.example` dans l'environnement serveur.
 5. Configurer Stripe pour envoyer `payment_intent.succeeded` et `payment_intent.payment_failed` à `/api/paiement/webhook`.
 6. Sur Vercel, vérifier le cron dans `vercel.json`; ailleurs, appeler périodiquement `/api/cron/expirer-reservations` avec `Authorization: Bearer <CRON_SECRET>`.
 7. Tester en mode Stripe test : montant en centimes, paiement réussi, webhook reçu deux fois, réservation expirée, paiement tardif et remboursement.

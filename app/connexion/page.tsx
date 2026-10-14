@@ -161,7 +161,7 @@ export default function ConnexionPage() {
           href="/"
           className="mt-6 text-sm text-white/45 transition-colors hover:text-white"
         >
-          ← Retour à l'accueil
+          ← Retour à l&apos;accueil
         </Link>
       </div>
     </main>
