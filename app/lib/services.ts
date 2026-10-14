@@ -3,14 +3,17 @@
  * Pour changer une route backend, modifiez UNIQUEMENT ce fichier.
  */
 import { api } from "./api";
+import type { Manifeste } from "./scanStore";
 import type {
   AdminTicketsResponse,
   AdminUser,
   Beneficiaire,
   BeneficiaryPayload,
+  BilletEnAttente,
   Commande,
   CreateUserPayload,
   EvenementAdmin,
+  EvenementScan,
   Evenement,
   EvenementPromoteur,
   EventPayload,
@@ -78,7 +81,7 @@ export const eventsService = {
 
 // ─── Billets & paiement (acheteur) ────────────────────────────────────────
 export const ticketsService = {
-  mine: () => api<Commande[]>("/billets"),
+  mine: () => api<Commande[]>("/billets/mes"),
 
   createPayment: (body: PaymentPayload, requestKey?: string) =>
     api<PaymentIntentResponse>("/paiement/creer", { method: "POST", body, headers: requestKey ? { "Idempotency-Key": requestKey } : {} }),
@@ -118,8 +121,16 @@ export const promoteurService = {
 
 // ─── Agent de scan ────────────────────────────────────────────────────────
 export const scanService = {
-  scan: (token: string, evenementId: string, horsLigne: boolean) =>
-    api<ScanResponse>("/scan", { method: "POST", body: { token, evenementId, horsLigne } }),
+  scan: (token: string, evenementId: string, horsLigne = false, scanneA?: string) =>
+    api<ScanResponse>("/scan", {
+      method: "POST",
+      body: { token, evenementId, horsLigne, scanneA },
+    }),
+
+  events: () => api<EvenementScan[]>("/scan/evenements"),
+
+  manifest: (evenementId: string) =>
+    api<Manifeste>(`/scan/manifest${qs({ evenementId })}`),
 
   stats: (evenementId: string) => api<ScanStatsData>(`/scan${qs({ evenementId })}`),
 };
@@ -171,6 +182,15 @@ export const adminService = {
     api<MessageResponse>(`/admin/users/${id}/roles`, { method: "PUT", body: { roles } }),
 
   // Billets & remboursements
+  pendingTickets: async () =>
+    (await api<{ billets: BilletEnAttente[] }>("/billets")).billets,
+
+  validateTicket: (id: string) =>
+    api<MessageResponse>(`/admin/billets/${id}/valider`, { method: "POST" }),
+
+  refuseTicket: (id: string) =>
+    api<MessageResponse>(`/admin/billets/${id}/refuser`, { method: "POST" }),
+
   tickets: (evenementId: string, statut?: StatutBillet | "") =>
     api<AdminTicketsResponse>("/admin/billets" + qs({ evenementId, statut })),
 

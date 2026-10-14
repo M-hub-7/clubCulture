@@ -16,19 +16,26 @@ export interface BilletTokenPayload {
   evenementId: string;
 }
 
+/** Le QR reste valable jusqu'à 7 jours après la fin de l'événement (90 jours si inconnue). */
 export async function genererTokenBillet(
   billetId: string,
   evenementId: string,
+  finEvenement?: Date,
 ): Promise<string> {
+  const expiresIn = finEvenement
+    ? Math.max(
+        60,
+        Math.floor((finEvenement.getTime() - Date.now()) / 1000) + 7 * 24 * 3600,
+      )
+    : "90d";
+
   return jwt.sign(
     {
       billetId,
       evenementId,
     },
     getJwtSecret(),
-    {
-      expiresIn: "90d",
-    },
+    { expiresIn },
   );
 }
 

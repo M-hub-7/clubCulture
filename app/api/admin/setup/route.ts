@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { createHash, timingSafeEqual } from "crypto";
 import { prisma } from "@/app/lib/prisma";
+
+/** Comparaison à temps constant (hash pour égaliser les longueurs). */
+function secretsEgaux(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
 
 export async function POST(request: Request) {
   try {
@@ -8,15 +16,7 @@ export async function POST(request: Request) {
     const adminSecret = request.headers.get("x-admin-secret");
     const expectedSecret = process.env.ADMIN_SECRET;
 
-    console.log("========== ADMIN DEBUG ==========");
-    console.log("Header reçu :", JSON.stringify(adminSecret));
-    console.log("ADMIN_SECRET :", JSON.stringify(expectedSecret));
-    console.log("Longueur header :", adminSecret?.length);
-    console.log("Longueur ADMIN_SECRET :", expectedSecret?.length);
-    console.log("Correspondance :", adminSecret === expectedSecret);
-    console.log("=================================");
-
-    if (adminSecret !== process.env.ADMIN_SECRET) {
+    if (!expectedSecret || !secretsEgaux(adminSecret ?? "", expectedSecret)) {
       return NextResponse.json(
         { erreur: "Clé secrète invalide" },
         { status: 403 },

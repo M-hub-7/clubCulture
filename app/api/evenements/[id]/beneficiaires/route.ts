@@ -15,6 +15,23 @@ export async function GET(
 
     const { id } = await params;
 
+    // Seul le promoteur propriétaire (ou un admin) voit les bénéficiaires
+    const evenement = await prisma.evenement.findUnique({
+      where: { id },
+      select: { promoteurId: true },
+    });
+
+    if (
+      !evenement ||
+      (evenement.promoteurId !== session.user.id &&
+        !session.user.roles.includes("ADMIN"))
+    ) {
+      return NextResponse.json(
+        { erreur: "Événement introuvable ou accès refusé" },
+        { status: 403 },
+      );
+    }
+
     const beneficiaires = await prisma.beneficiaire.findMany({
       where: { evenementId: id },
       include: {
@@ -31,6 +48,7 @@ export async function GET(
 
     return NextResponse.json({ beneficiaires, totalAlloue });
   } catch (error) {
+    console.error("Erreur bénéficiaires:", error);
     return NextResponse.json({ erreur: "Erreur serveur" }, { status: 500 });
   }
 }
@@ -63,7 +81,14 @@ export async function POST(
       );
     }
 
-    if (typePart === "POURCENTAGE" && (valeur < 0 || valeur > 100)) {
+    if (!Number.isInteger(valeur) || valeur < 0) {
+      return NextResponse.json(
+        { erreur: "valeur doit être un entier positif (centimes ou %)" },
+        { status: 400 },
+      );
+    }
+
+    if (typePart === "POURCENTAGE" && valeur > 100) {
       return NextResponse.json(
         { erreur: "Le pourcentage doit être entre 0 et 100" },
         { status: 400 },
@@ -80,6 +105,31 @@ export async function POST(
         { erreur: "Événement introuvable ou accès refusé" },
         { status: 403 },
       );
+    }
+
+    const utilisateur = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!utilisateur) {
+      return NextResponse.json(
+        { erreur: "Utilisateur bénéficiaire introuvable" },
+        { status: 404 },
+      );
+    }
+
+    // La somme des pourcentages ne peut pas dépasser 100 %
+    if (typePart === "POURCENTAGE") {
+      const { _sum } = await prisma.beneficiaire.aggregate({
+        where: { evenementId: id, typePart: "POURCENTAGE" },
+        _sum: { valeur: true },
+      });
+      if ((_sum.valeur ?? 0) + valeur > 100) {
+        return NextResponse.json(
+          { erreur: "La somme des pourcentages dépasserait 100 %" },
+          { status: 400 },
+        );
+      }
     }
 
     const beneficiaire = await prisma.beneficiaire.create({
@@ -103,6 +153,7 @@ export async function POST(
       { status: 201 },
     );
   } catch (error) {
+    console.error("Erreur bénéficiaires:", error);
     return NextResponse.json({ erreur: "Erreur serveur" }, { status: 500 });
   }
 }

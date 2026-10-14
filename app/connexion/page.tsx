@@ -74,7 +74,9 @@ export default function ConnexionPage() {
 
       const next = new URLSearchParams(window.location.search).get("next");
 
-      router.push(next || homeFor(user.roles));
+      // Uniquement un chemin interne (pas de redirection vers un autre site)
+      const interne = next && /^\/(?![/\\])/.test(next);
+      router.push(interne ? next : homeFor(user.roles));
     });
   };
 
@@ -159,7 +161,7 @@ export default function ConnexionPage() {
           href="/"
           className="mt-6 text-sm text-white/45 transition-colors hover:text-white"
         >
-          ← Retour à l'accueil
+          ← Retour à l&apos;accueil
         </Link>
       </div>
     </main>

@@ -62,7 +62,9 @@ ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_evenementId_fkey"
 ALTER TABLE "Commande" ADD CONSTRAINT "Commande_reservationId_fkey"
   FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- Conversion des prix historiques saisis en XAF entiers vers des centimes EUR.
+-- Conversion des montants historiques saisis en XAF entiers.
 -- Taux fixe XAF/EUR: 655,957 XAF pour 1 EUR. Vérifier les données avant exécution en production.
-UPDATE "CategorieBillet" SET "prix" = ROUND("prix" * 100.0 / 655.957)::INTEGER;
+-- CategorieBillet.prix est en EUROS entiers (le code multiplie par 100 pour Stripe) ;
+-- Beneficiaire.valeur FIXE est en CENTIMES.
+UPDATE "CategorieBillet" SET "prix" = ROUND("prix" / 655.957)::INTEGER;
 UPDATE "Beneficiaire" SET "valeur" = ROUND("valeur" * 100.0 / 655.957)::INTEGER WHERE "typePart" = 'FIXE';

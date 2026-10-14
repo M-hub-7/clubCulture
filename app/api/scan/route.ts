@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { verifierRole } from "@/app/lib/verifierRole";
 import { verifierTokenBillet } from "@/app/lib/qrcode";
+import type { ResultatScan } from "@/app/generated/prisma/enums";
 
 export async function POST(request: Request) {
   try {
@@ -15,7 +16,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const { token, evenementId, horsLigne } = await request.json();
+    const { token, evenementId, horsLigne, scanneA } = await request.json();
+
+    // Scan rejoué après une coupure : on garde l'heure réelle du passage (48 h max)
+    const dateScan = dateDuScan(horsLigne ? scanneA : undefined);
 
     if (!token || !evenementId) {
       return NextResponse.json(
@@ -33,9 +37,7 @@ export async function POST(request: Request) {
     try {
       payload = verifierTokenBillet(token);
     } catch (error) {
-      // Affichage temporaire pour identifier la vraie cause
-      // si le JWT est rejeté.
-      console.error("❌ Erreur vérification JWT :", error);
+      console.warn("QR rejeté :", error instanceof Error ? error.message : error);
 
       return NextResponse.json({
         resultat: "INVALIDE",
@@ -59,11 +61,6 @@ export async function POST(request: Request) {
         token,
       },
       include: {
-        scans: {
-          orderBy: {
-            createdAt: "asc",
-          },
-        },
         categorie: true,
         commande: {
           include: {
@@ -82,7 +79,11 @@ export async function POST(request: Request) {
     }
 
     // 4. Vérifier si le billet est remboursé ou annulé
-    if (billet.statut === "REMBOURSE" || billet.statut === "ANNULE") {
+    if (
+      billet.statut === "REMBOURSE" ||
+      billet.statut === "ANNULE" ||
+      billet.statut === "REFUSE"
+    ) {
       await enregistrerScan(
         billet.id,
         user.id,
@@ -97,44 +98,52 @@ export async function POST(request: Request) {
       });
     }
 
-    // 5. Vérifier si le billet a déjà été scanné
-    if (billet.scans.length > 0) {
-      await enregistrerScan(
-        billet.id,
-        user.id,
-        "DEJA_UTILISE",
-        Boolean(horsLigne),
-      );
+    // 5. Seul un billet VALIDE (validé par l'admin, non utilisé) ouvre l'entrée
+    if (billet.statut !== "VALIDE" && billet.statut !== "UTILISE") {
+      await enregistrerScan(billet.id, user.id, "INVALIDE", Boolean(horsLigne));
+
+      return NextResponse.json({
+        resultat: "INVALIDE",
+        message: "Billet non validé ou refusé",
+        couleur: "ROUGE",
+      });
+    }
+
+    // 6. Passage VALIDE → UTILISE atomique : si deux agents scannent le même
+    // billet en même temps, un seul obtient VALIDE.
+    const entreeAccordee = await prisma.$transaction(async (tx) => {
+      const maj = await tx.billet.updateMany({
+        where: { id: billet.id, statut: "VALIDE" },
+        data: { statut: "UTILISE" },
+      });
+
+      await tx.scan.create({
+        data: {
+          billetId: billet.id,
+          agentId: user.id,
+          resultat: maj.count === 1 ? "VALIDE" : "DEJA_UTILISE",
+          horsLigne: Boolean(horsLigne),
+          createdAt: dateScan,
+        },
+      });
+
+      return maj.count === 1;
+    });
+
+    if (!entreeAccordee) {
+      // Relu après la transaction : un autre agent a pu valider entre-temps
+      const premierScan = await prisma.scan.findFirst({
+        where: { billetId: billet.id, resultat: "VALIDE" },
+        orderBy: { createdAt: "asc" },
+      });
 
       return NextResponse.json({
         resultat: "DEJA_UTILISE",
         message: "Billet déjà utilisé",
         couleur: "ORANGE",
-        premierScan: billet.scans[0].createdAt,
+        premierScan: premierScan?.createdAt,
       });
     }
-
-    // 6. Billet valide :
-    // enregistrer le scan et marquer le billet comme utilisé.
-    await prisma.$transaction(async (tx) => {
-      await tx.scan.create({
-        data: {
-          billetId: billet.id,
-          agentId: user.id,
-          resultat: "VALIDE",
-          horsLigne: Boolean(horsLigne),
-        },
-      });
-
-      await tx.billet.update({
-        where: {
-          id: billet.id,
-        },
-        data: {
-          statut: "UTILISE",
-        },
-      });
-    });
 
     return NextResponse.json({
       resultat: "VALIDE",
@@ -153,12 +162,21 @@ export async function POST(request: Request) {
   }
 }
 
+function dateDuScan(scanneA: unknown): Date | undefined {
+  if (typeof scanneA !== "string") return undefined;
+  const d = new Date(scanneA);
+  const age = Date.now() - d.getTime();
+  return Number.isFinite(age) && age >= 0 && age < 48 * 3600 * 1000
+    ? d
+    : undefined;
+}
+
 // Fonction utilitaire pour enregistrer les scans
 // des billets remboursés, annulés ou déjà utilisés.
 async function enregistrerScan(
   billetId: string | null,
   agentId: string,
-  resultat: string,
+  resultat: ResultatScan,
   horsLigne: boolean,
 ) {
   if (!billetId) {
@@ -170,7 +188,7 @@ async function enregistrerScan(
       data: {
         billetId,
         agentId,
-        resultat: resultat as any,
+        resultat,
         horsLigne: Boolean(horsLigne),
       },
     });
@@ -213,13 +231,14 @@ export async function GET(request: Request) {
       },
     });
 
-    const total = stats.reduce((acc, s) => acc + s._count.statut, 0);
-
     const entres =
       stats.find((s) => s.statut === "UTILISE")?._count.statut || 0;
 
     const valides =
       stats.find((s) => s.statut === "VALIDE")?._count.statut || 0;
+
+    // Billets qui donnent droit à l'entrée (remboursés/refusés/en attente exclus)
+    const total = entres + valides;
 
     return NextResponse.json({
       total,

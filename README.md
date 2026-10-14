@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Club Culture — billetterie d'événements
 
-## Getting Started
+Next.js 16 (App Router) · Prisma 7 / PostgreSQL · Stripe (paiement + Connect) · Resend · Tailwind 4.
 
-First, run the development server:
+## Rôles et parcours
+
+| Rôle | Pages | Ce qu'il fait |
+|---|---|---|
+| Public | `/`, `/evenements`, `/evenements/[id]` | Consulte les événements publiés |
+| ACHETEUR | `/checkout`, `/mes-billets`, `/profil` | Réserve (stock bloqué 15 min), paie par Stripe, récupère ses QR |
+| PROMOTEUR | `/promoteur/*` | Crée un événement, le soumet à la modération, gère bénéficiaires et répartition |
+| ADMIN | `/admin/*` | Modère les événements, valide/refuse les billets, rembourse, gère les rôles |
+| AGENT | `/agent/scan` | Scanne les QR à l'entrée |
+| PRESTATAIRE | `/prestataire` | Bénéficiaire d'une répartition (compte Stripe Connect) |
+
+Cycle d'un billet : paiement → webhook Stripe → billet `EN_ATTENTE_VALIDATION` →
+validation admin (QR signé, `VALIDE`) → scan (`UTILISE`). Un refus admin rembourse la commande.
+
+Unités : `CategorieBillet.prix` en **euros entiers** ; montants Stripe, `Commande` et
+parts FIXE des bénéficiaires en **centimes** (voir `MODIFICATIONS-TECHNIQUES.md`).
+
+## Scan à l'entrée (`/agent/scan`)
+
+1. L'agent choisit l'événement : l'appareil télécharge la liste de ses billets
+   (`GET /api/scan/manifest`) — empreintes SHA-256 des QR, jamais les QR eux-mêmes.
+2. **En ligne**, chaque QR est vérifié par le serveur (`POST /api/scan`, passage
+   `VALIDE → UTILISE` atomique : un billet n'entre qu'une fois, même avec plusieurs portes).
+3. **Hors ligne**, le QR est vérifié sur l'appareil contre la liste : vert / orange (déjà
+   passé sur cet appareil) / rouge (inconnu, remboursé, autre événement). Le passage est
+   gardé en file (IndexedDB) avec son heure réelle.
+4. Au retour du réseau (et chaque minute), la file est envoyée ; les billets acceptés hors
+   ligne mais déjà passés ailleurs apparaissent dans « Conflits ». La liste est rafraîchie.
+
+Limite : hors ligne, deux portes sans réseau ne se voient pas — un même billet peut passer
+une fois par appareil ; le conflit est signalé à la synchronisation. La caméra exige HTTPS
+(ou `localhost`) ; sinon, utiliser la saisie manuelle.
+
+## Démarrage
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env      # puis renseigner les valeurs
+npm install
+npx prisma db push        # crée/met à jour le schéma
+npx prisma generate
+npm run dev               # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Premier administrateur : ouvrir `/setup-admin` et saisir `ADMIN_SECRET`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Webhook Stripe en local :
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+stripe listen --forward-to localhost:3000/api/paiement/webhook
+```
 
-## Learn More
+## Tests d'intégration
 
-To learn more about Next.js, take a look at the following resources:
+`test/clubCulture.test.ts` appelle l'API réelle (`npm run dev` doit tourner) et
+**vide toutes les tables** de `DATABASE_URL` avant de commencer. À lancer uniquement
+contre une base de test dédiée :
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+TEST_DB_RESET=1 npm test
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Déploiement (Vercel)
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`vercel.json` planifie `/api/cron/expirer-reservations` une fois par jour (limite du plan
+Hobby). Les réservations expirées sont aussi libérées à chaque nouveau paiement ; sur un
+plan payant, réduire l'intervalle (ex. `*/5 * * * *`).

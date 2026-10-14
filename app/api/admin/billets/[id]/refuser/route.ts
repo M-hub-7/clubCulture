@@ -5,7 +5,7 @@ import { verifierRole } from "@/app/lib/verifierRole";
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const admin = await verifierRole("ADMIN");
@@ -17,7 +17,7 @@ export async function POST(
       );
     }
 
-    const { id } = params;
+    const { id } = await params;
 
     const billet = await prisma.billet.findUnique({
       where: { id },
