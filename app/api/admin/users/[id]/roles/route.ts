@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifierRoleUser } from "@/app/lib/getUser";
 import { prisma } from "@/app/lib/prisma";
+import type { Role } from "@/app/generated/prisma/enums";
 
 const ROLES_VALIDES = [
   "ACHETEUR",
@@ -211,7 +212,7 @@ export async function PUT(
     await prisma.$transaction(async (tx) => {
       await tx.userRole.deleteMany({ where: { userId: id } });
       await tx.userRole.createMany({
-        data: roles.map((role: string) => ({ userId: id, role })),
+        data: roles.map((role: string) => ({ userId: id, role: role as Role })),
       });
     });
 

@@ -8,16 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    console.log("========== ADMIN EVENEMENTS ==========");
-
-    const authorization = request.headers.get("authorization");
-
-    console.log("Authorization :", authorization);
-    console.log("Token présent :", !!authorization);
-
     const session = await verifierRoleUser(request, "ADMIN");
-
-    console.log("Session retournée :", session);
 
     if (!session) {
       return NextResponse.json(

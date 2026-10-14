@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/app/lib/prisma";
 import { verifierRole } from "@/app/lib/verifierRole";
-import { signJwt } from "@/app/lib/qrcode";
+import { genererTokenBillet } from "@/app/lib/qrcode";
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const admin = await verifierRole("ADMIN");
@@ -17,7 +17,7 @@ export async function POST(
       );
     }
 
-    const { id } = params;
+    const { id } = await params;
 
     const billet = await prisma.billet.findUnique({
       where: { id },
@@ -53,10 +53,11 @@ export async function POST(
       );
     }
 
-    const jetonSignature = await signJwt({
-      billetId: billet.id,
-      evenementId: billet.categorie.evenementId,
-    });
+    const jetonSignature = await genererTokenBillet(
+      billet.id,
+      billet.categorie.evenementId,
+      billet.categorie.evenement.dateFin,
+    );
 
     const resultat = await prisma.$transaction(async (tx) => {
       const maj = await tx.billet.updateMany({
